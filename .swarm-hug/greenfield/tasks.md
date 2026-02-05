@@ -1,23 +1,20 @@
 # Tasks
 
-## CLI Commands
+## Global Constraint — The CLI must be a minimal Rust wrapper around Codex, with all workflow logic living in prompts
 
-- [ ] (#1) Implement `juliet ask`, `juliet next`, and `juliet feedback "<msg>"` command handlers in `juliet.rs`, wiring each to the appropriate prompt file and ensuring each command returns the specified user-facing confirmations and behaviors [5 pts]
-- [ ] (#2) Add startup behavior so `juliet` always runs `swarm --help` before doing anything else, and ensure the dangerous-mode/no-confirmations execution context is enforced for codex runs [5 pts]
+## Prompting & Workflow
 
-## Prompt System
+- [ ] (#1) Author `prompts/` markdown files (`ask.md`, `next.md`, `feedback.md`) that fully encode the PRD flow, including exact user-facing phrases, required `swarm` commands (`swarm project init ...`, `swarm run ...`), variation prompt, sprint results prompt, follow-up sprint creation for “add a test,” and the rule to start every run with `swarm --help`; end constraint: keep the Rust CLI as a minimal prompt dispatcher to Codex. [5 pts]
+- [ ] (#2) Extend the prompts with `.juliet` state rules: read/write `.juliet/needs-from-operator.md`, `.juliet/projects.md`, `.juliet/processes.md`, and `.juliet/artifacts/`, ensure `juliet next` behavior when needs exist vs not, require process cleanup annotations, and store follow-up PRDs in `.juliet/artifacts/sprint-1-followups.md`; end constraint: the Rust CLI stays thin and offloads logic to prompts. [5 pts] (blocked by #1)
 
-- [ ] (#3) Create the core prompt markdown files under `prompts/` that encode the full swarm workflow: PRD intake, `swarm project init`, task review request, variations question, `swarm run`, results review, and follow-up sprint creation for feedback like “add a test” [5 pts]
-- [ ] (#4) Implement the prompt logic to be state-driven by `.juliet` folder contents, including next-action selection and one-turn-at-a-time behavior [5 pts]
+## CLI Implementation
 
-## Juliet State Files
+- [ ] (#3) Implement `juliet.rs` as a minimal Rust CLI with subcommands `ask`, `next`, `feedback` that only load the corresponding prompt file and invoke `codex` in dangerous mode, passing through the user’s PRD path or feedback message and working directory; end constraint: `juliet` remains a minimal Rust wrapper around Codex, nothing more. [5 pts]
 
-- [ ] (#5) Define and integrate `.juliet/needs-from-operator.md`, `.juliet/projects.md`, `.juliet/processes.md`, and `.juliet/artifacts/` usage so `juliet next` reads needs, `juliet ask`/`feedback` update state, and `processes.md` is annotated and cleaned up when processes finish [5 pts]
+## Integration & Validation
 
-## Swarm Workflow Integration
+- [ ] (#4) Create a smoke-test script or checklist that exercises the full scenario (init from PRD path, tasks review + variation count, sprint run, results review, “add a test” follow-up sprint) and verifies expected `.juliet` files and `swarm` commands; end constraint: validate behavior without expanding the Rust CLI beyond a thin wrapper. [5 pts] (blocked by #1, #2, #3)
 
-- [ ] (#6) Implement the end-to-end project flow: PRD file creation when needed, `swarm project init <name> --with-prd <path>`, response with task file path and variations prompt, then `swarm run --project <name> --max-sprints 1 --target-branch feature/<name>` and results review [5 pts]
+## Documentation
 
-## Follow-Up Sprint Handling
-
-- [ ] (#7) Add follow-up sprint creation flow after user feedback (e.g., “ok, add a test”): generate a small PRD in `.juliet/artifacts/`, run `swarm project init sprint-1-followups --with-prd ...`, then `swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/foo`, and request review for next sprint [5 pts]
+- [ ] (#5) Add concise docs describing the commands, prompt files, `.juliet` folder semantics, expected response text, and the exact `swarm` command sequence, explicitly noting that all workflow logic lives in prompts; end constraint: documentation reinforces a minimal Rust CLI wrapper around Codex. [5 pts] (blocked by #1, #3)
