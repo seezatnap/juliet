@@ -19,7 +19,7 @@
 
 ## Testing
 
-- [B] (#9) Add unit tests for role validation, state scaffolding helpers, and role discovery filtering/mapping behavior (including edge cases for invalid names, non-directory entries, and excluded directories) [5 pts] (blocked by #1, #2, #3)
+- [x] (#9) Add unit tests for role validation, state scaffolding helpers, and role discovery filtering/mapping behavior (including edge cases for invalid names, non-directory entries, and excluded directories) [5 pts] (blocked by #1, #2, #3) (B)
 - [ ] (#10) Add integration/CLI tests that cover the full scenario matrix and exact message/exit-code expectations from the PRD, including `init` idempotency, explicit role launch, implicit single-role auto-selection, and all specified failures [5 pts] (blocked by #5, #6, #7, #8, #9)
 
 ## Documentation
