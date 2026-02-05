@@ -651,6 +651,28 @@ mod tests {
     }
 
     #[test]
+    fn prepare_launch_prompt_auto_selects_single_artifacts_role() {
+        let temp = TestDir::new("launch-implicit-artifacts-role");
+        let role_name = "artifacts";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Artifacts role prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let prompt = prepare_launch_prompt(temp.path(), None)
+            .expect("single artifacts role should be selected implicitly");
+        assert_eq!(prompt, "# Artifacts role prompt\n\nDo role work.");
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, prompt);
+    }
+
+    #[test]
     fn run_launch_command_in_dir_returns_engine_exit_code_for_implicit_single_role_launch() {
         let temp = TestDir::new("launch-implicit-engine-exit");
         let role_name = "director-of-engineering";
@@ -1141,6 +1163,33 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             let project_root = create_project_root(&temp);
             let role_name = "director-of-engineering";
             let role_prompt = "# Implicit role prompt\n\nRun the implicit role workflow.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
+                .expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let launch = run_cli(&project_root, &["codex"], Some(&mock_codex));
+
+            assert_eq!(launch.exit_code, 0);
+            assert_eq!(launch.stdout, "");
+            assert_eq!(launch.stderr, "");
+            assert_eq!(mock_codex.recorded_prompt(), role_prompt);
+            assert_eq!(
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable"),
+                role_prompt
+            );
+        }
+
+        #[test]
+        fn cli_implicit_single_artifacts_role_launch_auto_selects_role_and_exits_with_engine_code()
+        {
+            let temp = TestDir::new("integration-implicit-artifacts-role");
+            let project_root = create_project_root(&temp);
+            let role_name = "artifacts";
+            let role_prompt = "# Artifacts role prompt\n\nRun the implicit role workflow.";
 
             let init = run_cli(&project_root, &["init", "--role", role_name], None);
             assert_eq!(init.exit_code, 0);
