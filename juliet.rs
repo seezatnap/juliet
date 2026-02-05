@@ -433,4 +433,55 @@ mod tests {
             "custom session"
         );
     }
+
+    #[test]
+    fn initialize_role_creates_missing_state_when_prompt_already_exists() {
+        let temp = TestDir::new("prompt-only");
+        let role_name = "operations";
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# custom operations prompt").expect("prompt should be created");
+
+        let outcome = initialize_role(temp.path(), role_name, "seed prompt")
+            .expect("init should create missing state");
+        assert_eq!(outcome, InitOutcome::Initialized);
+        assert_eq!(
+            fs::read_to_string(&prompt_path).expect("prompt should remain unchanged"),
+            "# custom operations prompt"
+        );
+
+        let role_dir = role_state::role_state_dir(temp.path(), role_name);
+        assert!(role_dir.is_dir());
+        assert!(role_dir.join("session.md").is_file());
+        assert!(role_dir.join("needs-from-operator.md").is_file());
+        assert!(role_dir.join("projects.md").is_file());
+        assert!(role_dir.join("processes.md").is_file());
+        assert!(role_dir.join("artifacts").is_dir());
+    }
+
+    #[test]
+    fn initialize_role_creates_missing_prompt_when_state_already_exists() {
+        let temp = TestDir::new("state-only");
+        let role_name = "program-manager";
+        role_state::create_role_state(temp.path(), role_name)
+            .expect("state scaffold should be created");
+
+        let session_path = role_state::role_state_dir(temp.path(), role_name).join("session.md");
+        fs::write(&session_path, "existing session data").expect("session should be writable");
+
+        let outcome =
+            initialize_role(temp.path(), role_name, "## Embedded seed").expect("init should work");
+        assert_eq!(outcome, InitOutcome::Initialized);
+        assert_eq!(
+            fs::read_to_string(&session_path).expect("session should remain unchanged"),
+            "existing session data"
+        );
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        let prompt_contents = fs::read_to_string(prompt_path).expect("prompt should be readable");
+        assert!(prompt_contents.contains("# program-manager"));
+        assert!(prompt_contents.contains(OPERATOR_PLACEHOLDER));
+        assert!(prompt_contents.contains("## Embedded seed"));
+    }
 }
