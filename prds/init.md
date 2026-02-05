@@ -14,7 +14,7 @@ juliet thinks: okay, let's run the sprint.
 
 runs `tmux new-session -d -s swarm-foo-feature-foo "swarm run --project foo --max-sprints 1 --target-branch feature/foo --no-tui"`
 
-once done, juliet checks the tasks file. if tasks remain she says "here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks." if all tasks are done she says "here's the results: <pathtofiles>. looks like everything's done — let me know if you'd like any changes."
+once done, juliet checks the tasks file. if tasks remain she says "here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks." if all tasks are done she says "here's the results: <pathtofiles>. looks like everything's done - let me know if you'd like any changes."
 
 the user responds: "ok, add a test"
 
@@ -39,10 +39,11 @@ the prompt contains EVERYTHING that juliet needs to know about using swarm and t
 .juliet/projects.md -- high level projects that juliet is operating at the moment.
 .juliet/processes.md -- processes she spawned previously. check these, clean up the file if they're gone and see what the result of the work was. should be annotateed to explain what command it was running, its purpose, and if it's gone she should check to see what came of the work / what feedback she needs from the operator.
 .juliet/artifacts -- a place where juliet can store files to provide to `swarm` or for herself to learn more about the project between turns.
+.juliet/session.md -- bootstrap cache for the current conversation (engine availability + swarm engine syntax) so startup discovery does not retrigger every turn.
 
 
 juliet.rs simply exposes
 
 `juliet [message]` -- run juliet with an optional message. juliet reads .juliet/ state and the message to decide what to do: init a new project, check status, handle feedback, etc.
 
-internally the command goes straight to the prompt, which itself goes to `codex` (to start). codex runs in dangerous mode with no confirmations for permission checks (we'll only run juliet in a sandbox). juliet always starts by running `swarm --help` to understand what she has available to her.
+internally the command goes straight to the prompt, which itself goes to `codex` (to start). codex runs in dangerous mode with no confirmations for permission checks (we'll only run juliet in a sandbox). juliet runs `swarm --help` at conversation start (or explicit refresh), caches that in `.juliet/session.md`, and then resumes work from existing `.juliet` state on later turns.

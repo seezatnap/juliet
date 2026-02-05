@@ -1,8 +1,12 @@
 - Swarm project init leaves a placeholder `tasks.md`; populate it from the PRD before asking the operator for variation count.
 - Keep PRDs and task lists scoped to the user request; avoid injecting the Rust CLI constraint into unrelated content tasks.
 - `swarm project init projectname --with-prd` might fail if the default engine (claude) is unavailable; it falls back to the default `tasks.md` and prints a warning.
-- Detect engine availability at the start of each run with `codex login status` (look for `Logged in using`) and `claude -p "PRINT exactly 'CLAUDE_READY'"` (expects `CLAUDE_READY`), then pass the selected engine via the `swarm` engine property.
+- Detect engine availability at conversation start with `codex login status` (look for `Logged in using`) and `claude -p "PRINT exactly 'CLAUDE_READY'"` (expects `CLAUDE_READY`), cache the result in `.juliet/session.md`, and only re-detect on explicit refresh/reset.
 - Background `swarm run` jobs may terminate when Juliet exits; use `tmux` sessions and record the pane PID so they survive after the CLI finishes.
 - In `juliet next`, report completed results once per process (track with `reported_on` in `.juliet/processes.md`) even if other runs are still active, and avoid adding a needs entry until all runs finish.
 - The `claude` CLI may not be here; in this case use `codex` for `swarm` engine selection (if it is available).
 - Swarm logs may not emit a results path; if none is present, treat the target branch as the results location.
+- The `python` binary may be missing in this environment; lean on shell tools like `awk` or `rg` for quick checks.
+- Swarm-managed branch worktrees live under `.swarm-hug/.shared/worktrees/` with `/` encoded as `%2F` in directory names, which matters for scripted cleanup.
+- Once results are reported and the operator responds, prune stale `Completed` entries from `.juliet/processes.md` to keep state concise; logs and branches preserve the detail.
+- On boot, reconstruct intent from `.juliet/processes.md`, `.juliet/needs-from-operator.md`, and `.juliet/projects.md` before any idle greeting so Juliet resumes in-flight work reliably after restarts.
