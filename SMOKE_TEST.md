@@ -37,7 +37,7 @@ PROJECT=foo
 - [ ] Review the tasks file path from Step 1 and edit if desired.
 - [ ] Run `./juliet feedback "just one variation please"`.
 - [ ] Verify the first command executed is `swarm --help`.
-- [ ] Verify `nohup swarm run --project $PROJECT --max-sprints 1 --target-branch feature/$PROJECT` executes.
+- [ ] Verify `tmux new-session -d -s swarm-$PROJECT-feature-$PROJECT "swarm run --project $PROJECT --max-sprints 1 --target-branch feature/$PROJECT --no-tui"` executes.
 - [ ] Verify the response includes the exact results phrase: `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
 - [ ] Verify `.juliet/needs-from-operator.md` now requests results review (task review request removed).
 - [ ] Verify `.juliet/processes.md` records the sprint command with a completion annotation.
@@ -47,7 +47,7 @@ PROJECT=foo
 - [ ] Verify the first command executed is `swarm --help`.
 - [ ] Verify `.juliet/artifacts/sprint-1-followups.md` exists and includes a line above its task list stating the Rust CLI must remain a minimal wrapper, with each task ending in a rephrased reminder.
 - [ ] Verify `swarm project init sprint-1-followups --with-prd .juliet/artifacts/sprint-1-followups.md` executes.
-- [ ] Verify `nohup swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/$PROJECT` executes.
+- [ ] Verify `tmux new-session -d -s swarm-sprint-1-followups-feature-$PROJECT "swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/$PROJECT --no-tui"` executes.
 - [ ] Verify the results phrase is shown again and `.juliet/needs-from-operator.md` requests another review.
 
 **Optional: `juliet next` Behavior**

@@ -3,4 +3,4 @@
 
 - `swarm project init projectname --with-prd` can fail if the default engine (claude) is unavailable; it falls back to the default `tasks.md` and prints a warning.
 - Detect engine availability at the start of each run with `codex login status` (look for `Logged in using`) and `claude -p "PRINT exactly 'CLAUDE_READY'"` (expects `CLAUDE_READY`), then pass the selected engine via the `swarm` engine property.
-- Background `swarm run` jobs can terminate when Juliet exits; use `nohup` so they survive after the CLI finishes.
+- Background `swarm run` jobs can terminate when Juliet exits; use `tmux` sessions and record the pane PID so they survive after the CLI finishes.
