@@ -37,7 +37,7 @@ Record each PID in `.juliet/processes.md` under `Active` with command, target br
 Do not add a results-review need yet. Results are reported after the process completes (typically via `juliet next`).
 Respond with a brief status update telling the user the run(s) started and which target branch(es) to check later for results.
 
-4. If the user says "ok, add a test" (or equivalent) after seeing results, create a small follow-up PRD at `.juliet/artifacts/sprint-1-followups.md` describing the requested change. Include a line above the task list that states the global constraint that the Rust CLI must remain a minimal wrapper around Codex. End each task with a rephrased reminder of that same constraint.
+4. If the user says "ok, add a test" (or equivalent) after seeing results, create a small follow-up PRD at `.juliet/artifacts/sprint-1-followups.md` describing the requested change. Keep the PRD and task list focused on the requested change. Only mention the Rust CLI constraint if the change touches the CLI or workflow logic.
 
 Then run:
 

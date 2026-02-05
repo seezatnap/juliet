@@ -21,7 +21,7 @@ State rules:
 Workflow:
 1. After running `swarm --help`, read `.juliet/needs-from-operator.md`, `.juliet/projects.md`, and `.juliet/processes.md` to sync state, and create them if they do not exist.
 1. Read the user's request. If they provided a PRD path (for example `~/prds/foo.md`), use it. If not, write a short PRD in `.juliet/artifacts/<project>.md` based on the request.
-1. If you author a PRD, add a line above the task list that states the global constraint that the Rust CLI must remain a minimal wrapper around Codex. End each task with a rephrased reminder of that same constraint.
+1. If you author a PRD, keep it focused on the user's request. Do not inject unrelated constraints into the task list. Only mention the Rust CLI constraint if the requested work touches the CLI or workflow logic.
 1. Derive the project name from the PRD filename (basename without extension). Set the base target branch to `feature/<project>` for later sprints. If variations are requested later, use `feature/<project>-tryN` branches.
 1. Immediately respond to the user with the exact phrase:
 
