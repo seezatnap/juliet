@@ -20,11 +20,11 @@
 ## Testing
 
 - [x] (#9) Add unit tests for role validation, state scaffolding helpers, and role discovery filtering/mapping behavior (including edge cases for invalid names, non-directory entries, and excluded directories) [5 pts] (blocked by #1, #2, #3) (B)
-- [x] (#10) Add integration/CLI tests that cover the full scenario matrix and exact message/exit-code expectations from the PRD, including `init` idempotency, explicit role launch, implicit single-role auto-selection, and all specified failures [5 pts] (blocked by #5, #6, #7, #8, #9)
+- [x] (#10) Add integration/CLI tests that cover the full scenario matrix and exact message/exit-code expectations from the PRD, including `init` idempotency, explicit role launch, implicit single-role auto-selection, and all specified failures [5 pts] (blocked by #5, #6, #7, #8, #9) (A)
 
 ## Documentation
 
-- [x] (#11) Update README/help documentation for the multi-role workflow, including role initialization, launching with/without `--role`, naming constraints, `.juliet/<role>/` layout, prompt file locations, and guidance for projects with no configured roles [5 pts] (blocked by #5, #7, #8)
+- [x] (#11) Update README/help documentation for the multi-role workflow, including role initialization, launching with/without `--role`, naming constraints, `.juliet/<role>/` layout, prompt file locations, and guidance for projects with no configured roles [5 pts] (blocked by #5, #7, #8) (A)
 
 ## Follow-up tasks (from sprint review)
 - [x] (#12) Restore launch-time user input passthrough (removed in the CLI refactor) so explicit and implicit role runs append operator input to the prompt before invoking the engine (blocked by #6, #7) (B)
