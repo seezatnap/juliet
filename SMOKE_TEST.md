@@ -35,6 +35,7 @@ PROJECT=foo
 - [ ] Verify `swarm project init $PROJECT --with-prd $PRD_PATH` executes.
 - [ ] Verify the response includes `Got it, i'll get going on that now.` then the tasks review phrase.
 - [ ] Verify `.juliet/projects.md` records project + target branch + tasks path (and specs path when known).
+- [ ] Verify the reviewed tasks file is not left as scaffold/placeholder content and reflects the PRD.
 
 **Step 3: Start Sprint**
 - [ ] Run `./juliet "just one variation please"`.

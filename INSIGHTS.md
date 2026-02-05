@@ -13,3 +13,5 @@
 - This repo currently has no CI workflows or standard build tooling in the root (no `Cargo.toml`, `Makefile`, or `justfile`), so content-only tasks may not have automated validation commands to run.
 - For this sprint’s follow-up comparison work, the sonnet sources for `feature/wind-sonnets-try1` and `feature/wind-sonnets-try2` are both in `wind-sonnets.md`; try ordering differs by theme, so a thematic crosswalk is useful before line-level scoring.
 - In this environment, a practical sprint output location for reviewer discovery was `.swarm-hug/sprint-1-followups/`; if future sprint scaffolds add an explicit output directory, prefer that instead.
+- Swarm project planning files are lowercase (`tasks.md`, `specs.md`) under `.swarm-hug/<project>/`; probing uppercase variants (`TASKS.md`, `SPECS.md`) can silently miss real project state.
+- `git merge --autostash` can leave an `autostash` entry and mark files as staged after conflict recovery; verify `git diff --stat` matches stash contents before dropping it and restore unstaged state if needed.

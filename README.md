@@ -36,8 +36,11 @@ juliet [message]
 **Swarm Execution Rules**
 1. At conversation start: run `swarm --help`, `codex login status`, and `claude -p "PRINT exactly 'CLAUDE_READY'"`.
 2. For project setup: run `swarm project init <project> --with-prd <prd_path> <engine-arg>`.
-3. For sprint runs: run in background via `tmux` and always include `--no-tui` and `--target-branch`.
-4. For each sprint, ask model choice only if multiple engines are available; if one engine is available, use it automatically.
-5. After sprint results, ask for feedback, instruct the user to check out the feature branch and edit directly if desired, then reconcile tasks/specs only to reflect approved feedback/user edits.
+3. Canonical planning files are lowercase: `.swarm-hug/<project>/tasks.md` and `.swarm-hug/<project>/specs.md`.
+4. If init leaves placeholder `tasks.md`, regenerate concrete tasks from the PRD before asking for variation count.
+5. If a selected engine is unavailable and another cached engine exists, retry once with the alternate engine.
+6. For sprint runs: run in background via `tmux` and always include `--no-tui` and `--target-branch`.
+7. For each sprint, ask model choice only if multiple engines are available; if one engine is available, use it automatically.
+8. After sprint results, ask for feedback, instruct the user to check out the feature branch and edit directly if desired, then reconcile tasks/specs only to reflect approved feedback/user edits.
 
 The Rust CLI remains intentionally thin: it dispatches prompt + optional user input to Codex and does not implement workflow behavior.
