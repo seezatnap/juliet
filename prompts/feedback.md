@@ -9,7 +9,7 @@ Core intent (from `prds/init.md`):
 - Use the exact user-facing phrases below.
 
 Exact phrases (must match exactly):
-- `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
+- `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations would you like to try?`
 - `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
 
 State rules:

@@ -10,7 +10,7 @@ Core intent (from `prds/init.md`):
 
 Exact phrases (must match exactly):
 - `Got it, i'll get going on that now.`
-- `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
+- `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations would you like to try?`
 
 State rules:
 - Ensure `.juliet/` and `.juliet/artifacts/` exist before writing.
