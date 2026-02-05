@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 const JULIET_STATE_DIR: &str = ".juliet";
 const PROMPTS_DIR: &str = "prompts";
 const ARTIFACTS_DIR: &str = "artifacts";
-const LEGACY_PROMPT_ROLE_NAME: &str = "juliet";
 const RUNTIME_PROMPT_FILE: &str = "juliet-prompt.md";
 const STATE_FILES: [&str; 4] = [
     "session.md",
@@ -71,7 +70,7 @@ pub fn discover_configured_roles(project_root: &Path) -> io::Result<Vec<Configur
             Err(_) => continue,
         };
 
-        if role_name == ARTIFACTS_DIR || role_name == LEGACY_PROMPT_ROLE_NAME {
+        if role_name == ARTIFACTS_DIR {
             continue;
         }
 
@@ -288,8 +287,7 @@ mod tests {
             .expect("marketing role should be created");
         fs::create_dir_all(state_root.join(ARTIFACTS_DIR))
             .expect("artifacts directory should be created");
-        fs::create_dir_all(state_root.join(LEGACY_PROMPT_ROLE_NAME))
-            .expect("legacy juliet directory should be created");
+        fs::create_dir_all(state_root.join("juliet")).expect("juliet role should be created");
         fs::write(state_root.join("README.md"), "not a role")
             .expect("non-directory entry should be created");
 
@@ -311,6 +309,10 @@ mod tests {
                 ConfiguredRole {
                     name: "director-of-marketing".to_string(),
                     prompt_path: role_prompt_path(temp.path(), "director-of-marketing"),
+                },
+                ConfiguredRole {
+                    name: "juliet".to_string(),
+                    prompt_path: role_prompt_path(temp.path(), "juliet"),
                 },
             ]
         );

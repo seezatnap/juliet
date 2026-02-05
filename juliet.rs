@@ -629,6 +629,28 @@ mod tests {
     }
 
     #[test]
+    fn prepare_launch_prompt_auto_selects_single_juliet_role() {
+        let temp = TestDir::new("launch-implicit-juliet-role");
+        let role_name = "juliet";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Juliet role prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let prompt = prepare_launch_prompt(temp.path(), None)
+            .expect("single juliet role should be selected implicitly");
+        assert_eq!(prompt, "# Juliet role prompt\n\nDo role work.");
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, prompt);
+    }
+
+    #[test]
     fn run_launch_command_in_dir_returns_engine_exit_code_for_implicit_single_role_launch() {
         let temp = TestDir::new("launch-implicit-engine-exit");
         let role_name = "director-of-engineering";
