@@ -24,11 +24,14 @@ A minimal Rust CLI wrapper around Codex. The CLI only selects a prompt file and 
 - `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
 
 **Exact Swarm Command Sequence**
+Set `<engine-arg>` to the engine property flag/value shown by `swarm --help`, using the selected engine.
 1. `swarm --help`
-2. `swarm project init <project> --with-prd <prd_path>`
-3. `swarm run --project <project> --max-sprints <N> --target-branch feature/<project>`
-4. If the operator requests a follow-up (e.g., "ok, add a test"), create `.juliet/artifacts/sprint-1-followups.md` and run:
-5. `swarm project init sprint-1-followups --with-prd .juliet/artifacts/sprint-1-followups.md`
-6. `swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/<project>`
+2. `codex login status`
+3. `claude -p "PRINT exactly 'CLAUDE_READY'"`
+4. `swarm project init <project> --with-prd <prd_path> <engine-arg>`
+5. `swarm run --project <project> --max-sprints <N> --target-branch feature/<project> <engine-arg>`
+6. If the operator requests a follow-up (e.g., "ok, add a test"), create `.juliet/artifacts/sprint-1-followups.md` and run:
+7. `swarm project init sprint-1-followups --with-prd .juliet/artifacts/sprint-1-followups.md <engine-arg>`
+8. `swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/<project> <engine-arg>`
 
 All workflow rules (including `.juliet` state management and exact phrasing) are encoded in the prompt files. The Rust CLI stays minimal and does not implement workflow logic.
