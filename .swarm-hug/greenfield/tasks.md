@@ -4,12 +4,12 @@
 
 ## Prompting & Workflow
 
-- [A] (#1) Author `prompts/` markdown files (`ask.md`, `next.md`, `feedback.md`) that fully encode the PRD flow, including exact user-facing phrases, required `swarm` commands (`swarm project init ...`, `swarm run ...`), variation prompt, sprint results prompt, follow-up sprint creation for “add a test,” and the rule to start every run with `swarm --help`; end constraint: keep the Rust CLI as a minimal prompt dispatcher to Codex. [5 pts]
+- [x] (#1) Author `prompts/` markdown files (`ask.md`, `next.md`, `feedback.md`) that fully encode the PRD flow, including exact user-facing phrases, required `swarm` commands (`swarm project init ...`, `swarm run ...`), variation prompt, sprint results prompt, follow-up sprint creation for “add a test,” and the rule to start every run with `swarm --help`; end constraint: keep the Rust CLI as a minimal prompt dispatcher to Codex. [5 pts] (A)
 - [ ] (#2) Extend the prompts with `.juliet` state rules: read/write `.juliet/needs-from-operator.md`, `.juliet/projects.md`, `.juliet/processes.md`, and `.juliet/artifacts/`, ensure `juliet next` behavior when needs exist vs not, require process cleanup annotations, and store follow-up PRDs in `.juliet/artifacts/sprint-1-followups.md`; end constraint: the Rust CLI stays thin and offloads logic to prompts. [5 pts] (blocked by #1)
 
 ## CLI Implementation
 
-- [A] (#3) Implement `juliet.rs` as a minimal Rust CLI with subcommands `ask`, `next`, `feedback` that only load the corresponding prompt file and invoke `codex` in dangerous mode, passing through the user’s PRD path or feedback message and working directory; end constraint: `juliet` remains a minimal Rust wrapper around Codex, nothing more. [5 pts]
+- [x] (#3) Implement `juliet.rs` as a minimal Rust CLI with subcommands `ask`, `next`, `feedback` that only load the corresponding prompt file and invoke `codex` in dangerous mode, passing through the user’s PRD path or feedback message and working directory; end constraint: `juliet` remains a minimal Rust wrapper around Codex, nothing more. [5 pts] (A)
 
 ## Integration & Validation
 
