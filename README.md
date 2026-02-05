@@ -29,9 +29,9 @@ Set `<engine-arg>` to the engine property flag/value shown by `swarm --help`, us
 2. `codex login status`
 3. `claude -p "PRINT exactly 'CLAUDE_READY'"`
 4. `swarm project init <project> --with-prd <prd_path> <engine-arg>`
-5. `swarm run --project <project> --max-sprints <N> --target-branch feature/<project> <engine-arg>`
+5. `nohup swarm run --project <project> --max-sprints <N> --target-branch feature/<project> <engine-arg>`
 6. If the operator requests a follow-up (e.g., "ok, add a test"), create `.juliet/artifacts/sprint-1-followups.md` and run:
 7. `swarm project init sprint-1-followups --with-prd .juliet/artifacts/sprint-1-followups.md <engine-arg>`
-8. `swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/<project> <engine-arg>`
+8. `nohup swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/<project> <engine-arg>`
 
 All workflow rules (including `.juliet` state management and exact phrasing) are encoded in the prompt files. The Rust CLI stays minimal and does not implement workflow logic.
