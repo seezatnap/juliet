@@ -7,10 +7,12 @@ use std::process::{Command, Stdio};
 mod role_name;
 mod role_state;
 
-const PROMPT_FILE: &str = "prompts/juliet.md";
 const GENERAL_USAGE: &str = "Usage: juliet <command> [options]\nCommands:\n  juliet init --role <name>\n  juliet --role <name> <claude|codex>\n  juliet <claude|codex>";
 const INIT_USAGE: &str = "Usage: juliet init --role <name>";
 const DEFAULT_PROMPT_SEED: &str = include_str!("prompts/juliet.md");
+const NO_ROLES_CONFIGURED_ERROR: &str = "No roles configured. Run: juliet init --role <name>";
+const MULTIPLE_ROLES_FOUND_ERROR: &str =
+    "Multiple roles found. Specify one with --role <name>:";
 const OPERATOR_PLACEHOLDER: &str =
     "<!-- TODO: Replace with role-specific instructions and expected operator input. -->";
 
@@ -240,6 +242,8 @@ fn run_init_command(role_name: &str) -> i32 {
 }
 
 fn stage_explicit_role_prompt(project_root: &Path, role_name: &str) -> Result<String, String> {
+    role_name::validate_role_name(role_name)?;
+
     if !role_state::role_state_exists(project_root, role_name) {
         return Err(format!(
             "Role not found: {role_name}. Run: juliet init --role {role_name}"
@@ -261,14 +265,28 @@ fn stage_explicit_role_prompt(project_root: &Path, role_name: &str) -> Result<St
     Ok(prompt)
 }
 
+fn stage_implicit_role_prompt(project_root: &Path) -> Result<String, String> {
+    let roles = role_state::discover_configured_roles(project_root)
+        .map_err(|err| format!("failed to discover configured roles: {err}"))?;
+
+    match roles.as_slice() {
+        [] => Err(NO_ROLES_CONFIGURED_ERROR.to_string()),
+        [role] => stage_explicit_role_prompt(project_root, &role.name),
+        _ => {
+            let role_names = roles
+                .iter()
+                .map(|role| role.name.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(format!("{MULTIPLE_ROLES_FOUND_ERROR}\n{role_names}"))
+        }
+    }
+}
+
 fn prepare_launch_prompt(project_root: &Path, role_name: Option<&str>) -> Result<String, String> {
     match role_name {
         Some(name) => stage_explicit_role_prompt(project_root, name),
-        None => {
-            let prompt_path = project_root.join(PROMPT_FILE);
-            fs::read_to_string(&prompt_path)
-                .map_err(|err| format!("failed to read {}: {err}", prompt_path.display()))
-        }
+        None => stage_implicit_role_prompt(project_root),
     }
 }
 
@@ -419,6 +437,34 @@ mod tests {
     }
 
     #[test]
+    fn prepare_launch_prompt_rejects_explicit_role_traversal_name() {
+        let temp = TestDir::new("launch-explicit-invalid-role-name");
+        let escaped_role_name = "../escaped-role";
+        let escaped_role_dir = temp.path().join("escaped-role");
+
+        fs::create_dir_all(temp.path().join(".juliet"))
+            .expect("state root should exist for traversal regression test");
+        fs::create_dir_all(temp.path().join("prompts"))
+            .expect("prompts root should exist for traversal regression test");
+        fs::create_dir_all(&escaped_role_dir)
+            .expect("escaped role directory should exist outside .juliet");
+        fs::write(temp.path().join("escaped-role.md"), "# escaped prompt")
+            .expect("escaped prompt file should exist outside prompts");
+
+        let err = prepare_launch_prompt(temp.path(), Some(escaped_role_name))
+            .expect_err("invalid explicit role name should fail before path traversal");
+
+        assert_eq!(
+            err,
+            "Invalid role name: ../escaped-role. Use lowercase letters, numbers, and hyphens."
+        );
+        assert!(
+            !escaped_role_dir.join("juliet-prompt.md").exists(),
+            "runtime prompt should not be written outside .juliet/<role>/"
+        );
+    }
+
+    #[test]
     fn prepare_launch_prompt_reads_and_stages_explicit_role_prompt() {
         let temp = TestDir::new("launch-explicit-role");
         let role_name = "director-of-engineering";
@@ -438,6 +484,57 @@ mod tests {
             fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
                 .expect("runtime prompt should be written");
         assert_eq!(runtime_prompt, prompt);
+    }
+
+    #[test]
+    fn prepare_launch_prompt_fails_when_implicit_launch_has_no_roles() {
+        let temp = TestDir::new("launch-implicit-no-roles");
+        let prompts_dir = temp.path().join("prompts");
+        fs::create_dir_all(&prompts_dir).expect("prompts directory should be created");
+        fs::write(prompts_dir.join("juliet.md"), "# legacy prompt")
+            .expect("legacy prompt should not affect role discovery");
+
+        let err =
+            prepare_launch_prompt(temp.path(), None).expect_err("missing roles should fail launch");
+        assert_eq!(err, NO_ROLES_CONFIGURED_ERROR);
+    }
+
+    #[test]
+    fn prepare_launch_prompt_auto_selects_single_configured_role() {
+        let temp = TestDir::new("launch-implicit-single-role");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Implicit prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let prompt = prepare_launch_prompt(temp.path(), None)
+            .expect("single role should be selected implicitly");
+        assert_eq!(prompt, "# Implicit prompt\n\nDo role work.");
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, prompt);
+    }
+
+    #[test]
+    fn prepare_launch_prompt_fails_when_multiple_roles_are_configured() {
+        let temp = TestDir::new("launch-implicit-multiple-roles");
+        role_state::create_role_state(temp.path(), "zeta-team")
+            .expect("zeta team role state should exist");
+        role_state::create_role_state(temp.path(), "alpha-team")
+            .expect("alpha team role state should exist");
+
+        let err = prepare_launch_prompt(temp.path(), None)
+            .expect_err("multiple configured roles should require explicit selection");
+        assert_eq!(
+            err,
+            "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team"
+        );
     }
 
     #[test]
