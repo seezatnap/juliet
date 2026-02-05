@@ -36,4 +36,4 @@
 - [x] (#14) Resolve inconsistent handling of role name `juliet`: `juliet init --role juliet` succeeds, but implicit launch ignores `.juliet/juliet` and returns `No roles configured`; either reserve `juliet` in role validation/init or include it in role discovery, and add regression coverage. (A)
 
 ## Follow-up tasks (from sprint review)
-- [A] (#15) Resolve the `artifacts` role collision: `juliet init --role artifacts` currently succeeds, but implicit launch ignores `.juliet/artifacts` and returns `No roles configured`; either reserve `artifacts` in role-name validation or update discovery to distinguish legacy `.juliet/artifacts/` from a configured role, and add regression coverage. (blocked by #3)
+- [x] (#15) Resolve the `artifacts` role collision: `juliet init --role artifacts` currently succeeds, but implicit launch ignores `.juliet/artifacts` and returns `No roles configured`; either reserve `artifacts` in role-name validation or update discovery to distinguish legacy `.juliet/artifacts/` from a configured role, and add regression coverage. (blocked by #3) (A)
