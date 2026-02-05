@@ -242,6 +242,8 @@ fn run_init_command(role_name: &str) -> i32 {
 }
 
 fn stage_explicit_role_prompt(project_root: &Path, role_name: &str) -> Result<String, String> {
+    role_name::validate_role_name(role_name)?;
+
     if !role_state::role_state_exists(project_root, role_name) {
         return Err(format!(
             "Role not found: {role_name}. Run: juliet init --role {role_name}"
@@ -431,6 +433,34 @@ mod tests {
         assert_eq!(
             err,
             "Role not found: missing-role. Run: juliet init --role missing-role"
+        );
+    }
+
+    #[test]
+    fn prepare_launch_prompt_rejects_explicit_role_traversal_name() {
+        let temp = TestDir::new("launch-explicit-invalid-role-name");
+        let escaped_role_name = "../escaped-role";
+        let escaped_role_dir = temp.path().join("escaped-role");
+
+        fs::create_dir_all(temp.path().join(".juliet"))
+            .expect("state root should exist for traversal regression test");
+        fs::create_dir_all(temp.path().join("prompts"))
+            .expect("prompts root should exist for traversal regression test");
+        fs::create_dir_all(&escaped_role_dir)
+            .expect("escaped role directory should exist outside .juliet");
+        fs::write(temp.path().join("escaped-role.md"), "# escaped prompt")
+            .expect("escaped prompt file should exist outside prompts");
+
+        let err = prepare_launch_prompt(temp.path(), Some(escaped_role_name))
+            .expect_err("invalid explicit role name should fail before path traversal");
+
+        assert_eq!(
+            err,
+            "Invalid role name: ../escaped-role. Use lowercase letters, numbers, and hyphens."
+        );
+        assert!(
+            !escaped_role_dir.join("juliet-prompt.md").exists(),
+            "runtime prompt should not be written outside .juliet/<role>/"
         );
     }
 
