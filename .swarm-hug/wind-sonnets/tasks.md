@@ -2,7 +2,7 @@
 
 ## Content Creation
 
-- [A] (#1) Draft ten distinct, coherent, lyrical sonnets focused on the wind, ensuring each has a clear thematic focus [5 pts]
+- [x] (#1) Draft ten distinct, coherent, lyrical sonnets focused on the wind, ensuring each has a clear thematic focus [5 pts] (A)
 
 ## Review & Formatting
 
