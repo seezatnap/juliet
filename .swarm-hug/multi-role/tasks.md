@@ -3,8 +3,8 @@
 ## Core Role Infrastructure
 
 - [x] (#1) Implement a reusable role-name validation module that enforces `[a-z0-9-]+`, rejects empty names and leading/trailing hyphens, and returns the exact invalid-name error text: `Invalid role name: <name>. Use lowercase letters, numbers, and hyphens.` [5 pts] (A)
-- [A] (#2) Build role state filesystem helpers to create `.juliet/<role>/` with `session.md`, `needs-from-operator.md`, `projects.md`, `processes.md`, `artifacts/`, and support for runtime `juliet-prompt.md`, plus existence checks used for idempotent init behavior [5 pts] (blocked by #1)
-- [A] (#3) Implement role discovery by scanning `.juliet/` subdirectories (ignoring non-directories and `artifacts/`), deriving role names from directory names, and resolving each role’s prompt as `prompts/<role>.md` while ensuring legacy `prompts/juliet.md` is never treated as a configured role [5 pts] (blocked by #1)
+- [x] (#2) Build role state filesystem helpers to create `.juliet/<role>/` with `session.md`, `needs-from-operator.md`, `projects.md`, `processes.md`, `artifacts/`, and support for runtime `juliet-prompt.md`, plus existence checks used for idempotent init behavior [5 pts] (blocked by #1) (A)
+- [x] (#3) Implement role discovery by scanning `.juliet/` subdirectories (ignoring non-directories and `artifacts/`), deriving role names from directory names, and resolving each role’s prompt as `prompts/<role>.md` while ensuring legacy `prompts/juliet.md` is never treated as a configured role [5 pts] (blocked by #1) (A)
 
 ## CLI Command Flows
 
