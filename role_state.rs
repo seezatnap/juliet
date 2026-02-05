@@ -398,8 +398,15 @@ mod tests {
         fs::create_dir_all(state_root.join("qa")).expect("qa role should be created");
 
         let invalid_name = OsString::from_vec(vec![b'n', b'a', b'm', b'e', 0xFF]);
-        fs::create_dir_all(state_root.join(PathBuf::from(invalid_name)))
-            .expect("non-utf8 directory should be created");
+        match fs::create_dir_all(state_root.join(PathBuf::from(invalid_name))) {
+            Ok(_) => {}
+            Err(err) if err.raw_os_error() == Some(92) => {
+                // macOS APFS does not support non-UTF-8 filenames (EILSEQ).
+                // The behavior under test only matters on filesystems that allow them.
+                return;
+            }
+            Err(err) => panic!("unexpected error creating non-utf8 directory: {err}"),
+        }
 
         let roles = discover_configured_roles(temp.path()).expect("discovery should succeed");
         assert_eq!(

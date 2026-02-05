@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 mod role_name;
 mod role_state;
 
-const GENERAL_USAGE: &str = "Usage: juliet <command> [options]\nCommands:\n  juliet init --role <name>\n  juliet --role <name> <claude|codex>\n  juliet <claude|codex>";
+const GENERAL_USAGE: &str = "Usage: juliet <command> [options]\n\nCommands:\n  Initialize a new role:\n    juliet init --role <name>\n\n  Launch a specific role:\n    juliet --role <name> <claude|codex>\n\n  Launch (auto-selects role when only one exists):\n    juliet <claude|codex>";
 const INIT_USAGE: &str = "Usage: juliet init --role <name>";
 const DEFAULT_PROMPT_SEED: &str = include_str!("prompts/juliet.md");
 const NO_ROLES_CONFIGURED_ERROR: &str = "No roles configured. Run: juliet init --role <name>";
@@ -354,7 +354,7 @@ fn main() {
     let command = match parse_cli_command(&args) {
         Ok(parsed) => parsed,
         Err(err) => {
-            eprintln!("{}", err.message());
+            println!("{}", err.message());
             std::process::exit(1);
         }
     };
@@ -1015,7 +1015,11 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
         fn create_project_root(temp: &TestDir) -> PathBuf {
             let project_root = temp.path().join("project");
             fs::create_dir_all(&project_root).expect("project root should be created");
+            // Canonicalize to resolve symlinks (e.g. macOS /var -> /private/var)
+            // so path assertions match what the binary sees via current_dir().
             project_root
+                .canonicalize()
+                .expect("project root should be canonicalizable")
         }
 
         fn run_cli(
@@ -1051,8 +1055,8 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             let output = run_cli(&project_root, &[], None);
 
             assert_eq!(output.exit_code, 1);
-            assert_eq!(output.stdout, "");
-            assert_eq!(output.stderr, format!("{GENERAL_USAGE}\n"));
+            assert_eq!(output.stdout, format!("{GENERAL_USAGE}\n"));
+            assert_eq!(output.stderr, "");
         }
 
         #[test]
@@ -1063,8 +1067,8 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             let output = run_cli(&project_root, &["init"], None);
 
             assert_eq!(output.exit_code, 1);
-            assert_eq!(output.stdout, "");
-            assert_eq!(output.stderr, format!("{INIT_USAGE}\n"));
+            assert_eq!(output.stdout, format!("{INIT_USAGE}\n"));
+            assert_eq!(output.stderr, "");
         }
 
         #[test]

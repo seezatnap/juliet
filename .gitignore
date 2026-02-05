@@ -1,2 +1,8 @@
+# Compiled binary
 juliet
+
+# Juliet runtime state
 .juliet
+
+# Cargo build artifacts
+target/
