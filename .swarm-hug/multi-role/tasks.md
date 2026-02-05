@@ -31,3 +31,6 @@
 
 ## Follow-up tasks (from sprint review)
 - [x] (#13) Validate `juliet --role <name> <claude|codex>` with the existing role-name rules before building paths so invalid or traversal inputs (for example `../...`) are rejected with the invalid-name error instead of reading/writing outside `.juliet/<role>/`. (A)
+
+## Follow-up tasks (from sprint review)
+- [ ] (#14) Resolve inconsistent handling of role name `juliet`: `juliet init --role juliet` succeeds, but implicit launch ignores `.juliet/juliet` and returns `No roles configured`; either reserve `juliet` in role validation/init or include it in role discovery, and add regression coverage.
