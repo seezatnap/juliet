@@ -50,5 +50,3 @@ juliet.rs simply exposes
 `juliet feedback "<msg>"` -- you give juliet feedback. she decides what to do about it, then responds with a confirmation.
 
 internally all of these commands go straight to prompts, which themselves go to `codex` (to start). codex runs in dangerous mode with no confirmations for permission checks (we'll only run juliet in a sandbox). juliet always starts by running `swarm --help` to understand what she has available to her.
-
-IMPORTANT: `julia` must be a minimalistic rust-based cli as specified above. it must do very little itself, other than running codex with the prompts as outlined above. Make this clear in each task, rephrasing it at the end of each task. and above the task list as well.
