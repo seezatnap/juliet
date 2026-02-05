@@ -32,7 +32,9 @@ impl Engine {
 
 #[derive(Debug, Eq, PartialEq)]
 enum CliCommand {
-    Init { role_name: String },
+    Init {
+        role_name: String,
+    },
     Launch {
         role_name: Option<String>,
         engine: Engine,
@@ -237,19 +239,52 @@ fn run_init_command(role_name: &str) -> i32 {
     }
 }
 
-fn run_launch_command(_role_name: Option<&str>, engine: Engine) -> i32 {
-    let prompt = match fs::read_to_string(PROMPT_FILE) {
-        Ok(contents) => contents,
-        Err(err) => {
-            eprintln!("failed to read {PROMPT_FILE}: {err}");
-            return 1;
-        }
-    };
+fn stage_explicit_role_prompt(project_root: &Path, role_name: &str) -> Result<String, String> {
+    if !role_state::role_state_exists(project_root, role_name) {
+        return Err(format!(
+            "Role not found: {role_name}. Run: juliet init --role {role_name}"
+        ));
+    }
 
+    let prompt_path = role_state::role_prompt_path(project_root, role_name);
+    let prompt = fs::read_to_string(&prompt_path)
+        .map_err(|err| format!("failed to read {}: {err}", prompt_path.display()))?;
+
+    let runtime_prompt_path = role_state::runtime_prompt_path(project_root, role_name);
+    role_state::write_runtime_prompt(project_root, role_name, &prompt).map_err(|err| {
+        format!(
+            "failed to write runtime prompt for role {role_name} at {}: {err}",
+            runtime_prompt_path.display()
+        )
+    })?;
+
+    Ok(prompt)
+}
+
+fn prepare_launch_prompt(project_root: &Path, role_name: Option<&str>) -> Result<String, String> {
+    match role_name {
+        Some(name) => stage_explicit_role_prompt(project_root, name),
+        None => {
+            let prompt_path = project_root.join(PROMPT_FILE);
+            fs::read_to_string(&prompt_path)
+                .map_err(|err| format!("failed to read {}: {err}", prompt_path.display()))
+        }
+    }
+}
+
+fn run_launch_command(role_name: Option<&str>, engine: Engine) -> i32 {
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
         Err(err) => {
             eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    let prompt = match prepare_launch_prompt(&cwd, role_name) {
+        Ok(contents) => contents,
+        Err(err) => {
+            eprintln!("{err}");
             return 1;
         }
     };
@@ -368,6 +403,41 @@ mod tests {
         let error = parse_cli_command(&to_args(&["init"])).unwrap_err();
         assert_eq!(error, CliError::InitUsage);
         assert_eq!(error.message(), INIT_USAGE);
+    }
+
+    #[test]
+    fn prepare_launch_prompt_fails_when_explicit_role_is_missing() {
+        let temp = TestDir::new("launch-missing-role");
+
+        let err = prepare_launch_prompt(temp.path(), Some("missing-role"))
+            .expect_err("missing role should fail");
+
+        assert_eq!(
+            err,
+            "Role not found: missing-role. Run: juliet init --role missing-role"
+        );
+    }
+
+    #[test]
+    fn prepare_launch_prompt_reads_and_stages_explicit_role_prompt() {
+        let temp = TestDir::new("launch-explicit-role");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Explicit prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let prompt = prepare_launch_prompt(temp.path(), Some(role_name))
+            .expect("explicit role prompt should be loaded");
+        assert_eq!(prompt, "# Explicit prompt\n\nDo role work.");
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, prompt);
     }
 
     #[test]
