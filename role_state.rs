@@ -5,7 +5,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 const JULIET_STATE_DIR: &str = ".juliet";
+const PROMPTS_DIR: &str = "prompts";
 const ARTIFACTS_DIR: &str = "artifacts";
+const LEGACY_PROMPT_ROLE_NAME: &str = "juliet";
 const RUNTIME_PROMPT_FILE: &str = "juliet-prompt.md";
 const STATE_FILES: [&str; 4] = [
     "session.md",
@@ -14,8 +16,20 @@ const STATE_FILES: [&str; 4] = [
     "processes.md",
 ];
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfiguredRole {
+    pub name: String,
+    pub prompt_path: PathBuf,
+}
+
 pub fn role_state_dir(project_root: &Path, role_name: &str) -> PathBuf {
     project_root.join(JULIET_STATE_DIR).join(role_name)
+}
+
+pub fn role_prompt_path(project_root: &Path, role_name: &str) -> PathBuf {
+    project_root
+        .join(PROMPTS_DIR)
+        .join(format!("{role_name}.md"))
 }
 
 pub fn runtime_prompt_path(project_root: &Path, role_name: &str) -> PathBuf {
@@ -35,6 +49,40 @@ pub fn create_role_state(project_root: &Path, role_name: &str) -> io::Result<()>
     }
 
     Ok(())
+}
+
+pub fn discover_configured_roles(project_root: &Path) -> io::Result<Vec<ConfiguredRole>> {
+    let state_root = project_root.join(JULIET_STATE_DIR);
+    let entries = match fs::read_dir(state_root) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err),
+    };
+
+    let mut roles = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+
+        let role_name = match entry.file_name().into_string() {
+            Ok(name) => name,
+            Err(_) => continue,
+        };
+
+        if role_name == ARTIFACTS_DIR || role_name == LEGACY_PROMPT_ROLE_NAME {
+            continue;
+        }
+
+        roles.push(ConfiguredRole {
+            prompt_path: role_prompt_path(project_root, &role_name),
+            name: role_name,
+        });
+    }
+
+    roles.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(roles)
 }
 
 pub fn write_runtime_prompt(project_root: &Path, role_name: &str, prompt: &str) -> io::Result<()> {
@@ -173,5 +221,53 @@ mod tests {
         let contents = fs::read_to_string(runtime_prompt_path(temp.path(), role_name))
             .expect("runtime prompt should be readable");
         assert_eq!(contents, "# prompt two");
+    }
+
+    #[test]
+    fn discover_configured_roles_returns_empty_when_state_directory_is_missing() {
+        let temp = TestDir::new("discover-empty");
+        let roles = discover_configured_roles(temp.path()).expect("discovery should succeed");
+
+        assert!(roles.is_empty());
+    }
+
+    #[test]
+    fn discover_configured_roles_filters_entries_and_maps_prompt_paths() {
+        let temp = TestDir::new("discover-filtered");
+        let state_root = temp.path().join(JULIET_STATE_DIR);
+        fs::create_dir_all(&state_root).expect("state root should be created");
+
+        fs::create_dir_all(state_root.join("director-of-engineering"))
+            .expect("engineering role should be created");
+        fs::create_dir_all(state_root.join("director-of-marketing"))
+            .expect("marketing role should be created");
+        fs::create_dir_all(state_root.join(ARTIFACTS_DIR))
+            .expect("artifacts directory should be created");
+        fs::create_dir_all(state_root.join(LEGACY_PROMPT_ROLE_NAME))
+            .expect("legacy juliet directory should be created");
+        fs::write(state_root.join("README.md"), "not a role")
+            .expect("non-directory entry should be created");
+
+        let prompts_root = temp.path().join(PROMPTS_DIR);
+        fs::create_dir_all(&prompts_root).expect("prompts root should be created");
+        fs::write(prompts_root.join("juliet.md"), "legacy default prompt")
+            .expect("legacy prompt should exist");
+        fs::write(prompts_root.join("analyst.md"), "prompt with no role state")
+            .expect("orphan prompt should exist");
+
+        let roles = discover_configured_roles(temp.path()).expect("discovery should succeed");
+        assert_eq!(
+            roles,
+            vec![
+                ConfiguredRole {
+                    name: "director-of-engineering".to_string(),
+                    prompt_path: role_prompt_path(temp.path(), "director-of-engineering"),
+                },
+                ConfiguredRole {
+                    name: "director-of-marketing".to_string(),
+                    prompt_path: role_prompt_path(temp.path(), "director-of-marketing"),
+                },
+            ]
+        );
     }
 }
