@@ -21,7 +21,8 @@ A minimal Rust CLI wrapper around Codex. The CLI only selects a prompt file and 
 **Expected Response Text (Exact Phrases)**
 - `Got it, i'll get going on that now.`
 - `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
-- `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
+- (more sprints remain) `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
+- (project complete) `here's the results: <pathtofiles>. looks like everything's done — let me know if you'd like any changes.`
 
 **Exact Swarm Command Sequence**
 Set `<engine-arg>` to the engine property flag/value shown by `swarm --help`, using the selected engine. Background runs use `tmux` to survive after the CLI exits.

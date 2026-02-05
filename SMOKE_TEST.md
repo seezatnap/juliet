@@ -38,7 +38,7 @@ PROJECT=foo
 - [ ] Run `./juliet feedback "just one variation please"`.
 - [ ] Verify the first command executed is `swarm --help`.
 - [ ] Verify `tmux new-session -d -s swarm-$PROJECT-feature-$PROJECT "swarm run --project $PROJECT --max-sprints 1 --target-branch feature/$PROJECT --no-tui"` executes.
-- [ ] Verify the response includes the exact results phrase: `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
+- [ ] Verify the response includes the appropriate results phrase: if tasks remain, `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.` If all tasks are done, `here's the results: <pathtofiles>. looks like everything's done — let me know if you'd like any changes.`
 - [ ] Verify `.juliet/needs-from-operator.md` now requests results review (task review request removed).
 - [ ] Verify `.juliet/processes.md` records the sprint command with a completion annotation.
 

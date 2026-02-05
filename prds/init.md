@@ -14,7 +14,7 @@ juliet thinks: okay, let's run the sprint.
 
 runs `tmux new-session -d -s swarm-foo-feature-foo "swarm run --project foo --max-sprints 1 --target-branch feature/foo --no-tui"`
 
-once done, juliet says "here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks."
+once done, juliet checks the tasks file. if tasks remain she says "here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks." if all tasks are done she says "here's the results: <pathtofiles>. looks like everything's done — let me know if you'd like any changes."
 
 the user responds: "ok, add a test"
 

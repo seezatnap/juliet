@@ -20,6 +20,7 @@ State rules:
 - Read `.juliet/projects.md` and update it with the active project name, PRD path, and target branch(es).
 - Read `.juliet/processes.md` and keep it current. Only record `swarm run` invocations here (not file edits or other tool commands). When you start a `swarm run` that will outlive this turn, record its PID, command, target branch, log path, and start time. When it completes, move it to a completed section with a cleanup annotation describing the outcome, results location, and any operator follow-up needed.
 - Use a simple markdown list in `.juliet/processes.md` with `Active` and `Completed` sections. Active entries must include PID, command, target branch, log path, and start time. Completed entries must include the cleanup annotation.
+- Prune completed entries from `.juliet/processes.md` when they are stale: the results have been reported to the operator, the operator has responded or the corresponding need in `.juliet/needs-from-operator.md` has been resolved, and the information is already captured elsewhere (e.g., in projects, artifacts, or needs). Remove these entries entirely to prevent bloat.
 - Store PRDs or other helper files you author in `.juliet/artifacts/`.
 
 Workflow:
@@ -51,7 +52,6 @@ Then run:
 Launch the follow-up run in the background with no TUI, using the target branch associated with the approved variation:
 `tmux new-session -d -s swarm-sprint-1-followups-<branch-sanitized> "swarm run --project sprint-1-followups --max-sprints 1 --target-branch <branch> --no-tui <engine-arg> > .juliet/artifacts/sprint-1-followups-<branch-sanitized>-swarm.log 2>&1"; tmux list-panes -t swarm-sprint-1-followups-<branch-sanitized> -F '#{pane_pid}'`
 Record the PID in `.juliet/processes.md` under `Active` with command, target branch, log path, and start time.
-Do not add a results-review need yet. Results are reported after the process completes (typically via `juliet next`), using the exact results phrase:
-here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.
+Do not add a results-review need yet. Results are reported after the process completes (typically via `juliet next`), using the appropriate results phrase. Check the project's tasks file: if tasks remain, use `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.` If all tasks are done, use `here's the results: <pathtofiles>. looks like everything's done — let me know if you'd like any changes.`
 
 End constraint: keep the Rust CLI as a minimal prompt dispatcher to Codex.

@@ -18,6 +18,7 @@ State rules:
 - Read `.juliet/projects.md` and update it with the active project name, PRD path, and target branch(es).
 - Read `.juliet/processes.md` and keep it current. Only record `swarm run` invocations here (not file edits or other tool commands). When you start a `swarm run` that will outlive this turn, record its PID, command, target branch, log path, and start time. When it completes, move it to a completed section with a cleanup annotation describing the outcome, results location, and any operator follow-up needed.
 - Use a simple markdown list in `.juliet/processes.md` with `Active` and `Completed` sections. Active entries must include PID, command, target branch, log path, and start time. Completed entries must include the cleanup annotation.
+- Prune completed entries from `.juliet/processes.md` when they are stale: the results have been reported to the operator, the operator has responded or the corresponding need in `.juliet/needs-from-operator.md` has been resolved, and the information is already captured elsewhere (e.g., in projects, artifacts, or needs). Remove these entries entirely to prevent bloat.
 - Store PRDs or other helper files you author in `.juliet/artifacts/`.
 
 Workflow:
