@@ -1,19 +1,20 @@
 # Juliet
 
-A minimal Rust CLI wrapper around Codex. The CLI only selects a prompt file and passes user input to Codex; all workflow logic, state transitions, and user-facing behavior live in the prompt markdown files.
+A minimal Rust CLI wrapper around Codex. The CLI reads a single prompt file and passes optional user input to Codex; all workflow logic, state transitions, and user-facing behavior live in the prompt markdown file.
 
-**Commands**
-- `juliet ask [PRD_PATH]`: start a request; optionally provide a PRD path.
-- `juliet next`: ask for the next operator need (or report status if none).
-- `juliet feedback "<message>"`: provide operator feedback to move the workflow forward.
+**Usage**
+```
+juliet [message]
+```
 
-**Prompt Files**
-- `prompts/ask.md`: workflow for `juliet ask`.
-- `prompts/next.md`: workflow for `juliet next`.
-- `prompts/feedback.md`: workflow for `juliet feedback`.
+- `juliet` with no arguments: Juliet reads state and decides what to do (check needs, report status, etc.).
+- `juliet "start a project from ~/prds/foo.md"`: Juliet receives the message and decides how to act (init a project, handle feedback, etc.).
+
+**Prompt File**
+- `prompts/juliet.md`: unified prompt containing all workflow logic. Juliet reads `.juliet/` state and the operator's input to decide what to do.
 
 **State (.juliet)**
-- `.juliet/needs-from-operator.md`: queue of operator needs; `juliet next` asks the oldest item verbatim and exits.
+- `.juliet/needs-from-operator.md`: queue of operator needs; when run with no input, Juliet asks the oldest item verbatim and exits.
 - `.juliet/projects.md`: active project name, PRD path, and target branch.
 - `.juliet/processes.md`: active and completed long-running commands with cleanup annotations.
 - `.juliet/artifacts/`: PRDs and helper files created between turns.
@@ -21,6 +22,7 @@ A minimal Rust CLI wrapper around Codex. The CLI only selects a prompt file and 
 **Expected Response Text (Exact Phrases)**
 - `Got it, i'll get going on that now.`
 - `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
+- `i'm still working`
 - (more sprints remain) `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
 - (project complete) `here's the results: <pathtofiles>. looks like everything's done — let me know if you'd like any changes.`
 
@@ -35,4 +37,4 @@ Set `<engine-arg>` to the engine property flag/value shown by `swarm --help`, us
 7. `swarm project init sprint-1-followups --with-prd .juliet/artifacts/sprint-1-followups.md <engine-arg>`
 8. `tmux new-session -d -s swarm-sprint-1-followups-<branch-sanitized> "swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/<project> --no-tui <engine-arg> > .juliet/artifacts/sprint-1-followups-<branch-sanitized>-swarm.log 2>&1"`
 
-All workflow rules (including `.juliet` state management and exact phrasing) are encoded in the prompt files. The Rust CLI stays minimal and does not implement workflow logic.
+All workflow rules (including `.juliet` state management and exact phrasing) are encoded in the prompt file. The Rust CLI stays minimal and does not implement workflow logic.

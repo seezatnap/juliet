@@ -4,52 +4,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-#[derive(Debug, PartialEq, Eq)]
-enum JulietCommand {
-    Ask { input: Option<String> },
-    Next,
-    Feedback { message: String },
-}
-
-fn parse_args(args: &[String]) -> Result<JulietCommand, String> {
-    if args.is_empty() {
-        return Err("missing command".to_string());
-    }
-
-    match args[0].as_str() {
-        "ask" => {
-            let input = if args.len() > 1 {
-                Some(args[1..].join(" "))
-            } else {
-                None
-            };
-            Ok(JulietCommand::Ask { input })
-        }
-        "next" => {
-            if args.len() > 1 {
-                return Err("unexpected arguments for 'next'".to_string());
-            }
-            Ok(JulietCommand::Next)
-        }
-        "feedback" => {
-            if args.len() < 2 {
-                return Err("missing feedback message".to_string());
-            }
-            Ok(JulietCommand::Feedback {
-                message: args[1..].join(" "),
-            })
-        }
-        other => Err(format!("unknown command: {other}")),
-    }
-}
-
-fn prompt_path(cmd: &JulietCommand) -> &'static str {
-    match cmd {
-        JulietCommand::Ask { .. } => "prompts/ask.md",
-        JulietCommand::Next => "prompts/next.md",
-        JulietCommand::Feedback { .. } => "prompts/feedback.md",
-    }
-}
+const PROMPT_FILE: &str = "prompts/juliet.md";
 
 fn build_prompt(base: &str, user_input: Option<&str>) -> String {
     if let Some(input) = user_input {
@@ -77,36 +32,24 @@ fn run_codex(prompt: &str, cwd: &Path) -> io::Result<i32> {
     Ok(status.code().unwrap_or(1))
 }
 
-fn usage() -> &'static str {
-    "Usage:\n  juliet ask [PRD_PATH]\n  juliet next\n  juliet feedback <MESSAGE>"
-}
-
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let cmd = match parse_args(&args[1..]) {
-        Ok(cmd) => cmd,
-        Err(message) => {
-            eprintln!("{message}\n\n{}", usage());
-            std::process::exit(2);
-        }
+
+    let user_input = if args.len() > 1 {
+        Some(args[1..].join(" "))
+    } else {
+        None
     };
 
-    let prompt_file = prompt_path(&cmd);
-    let prompt = match fs::read_to_string(prompt_file) {
+    let prompt = match fs::read_to_string(PROMPT_FILE) {
         Ok(contents) => contents,
         Err(err) => {
-            eprintln!("failed to read {prompt_file}: {err}");
+            eprintln!("failed to read {PROMPT_FILE}: {err}");
             std::process::exit(1);
         }
     };
 
-    let user_input = match &cmd {
-        JulietCommand::Ask { input } => input.as_deref(),
-        JulietCommand::Next => None,
-        JulietCommand::Feedback { message } => Some(message.as_str()),
-    };
-
-    let full_prompt = build_prompt(&prompt, user_input);
+    let full_prompt = build_prompt(&prompt, user_input.as_deref());
 
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
@@ -130,59 +73,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_args_handles_ask_with_optional_input() {
-        let args = vec!["ask".to_string()];
-        assert_eq!(
-            parse_args(&args).unwrap(),
-            JulietCommand::Ask { input: None }
-        );
-
-        let args = vec!["ask".to_string(), "~/prds/foo.md".to_string()];
-        assert_eq!(
-            parse_args(&args).unwrap(),
-            JulietCommand::Ask {
-                input: Some("~/prds/foo.md".to_string())
-            }
-        );
-
-        let args = vec![
-            "ask".to_string(),
-            "path".to_string(),
-            "with".to_string(),
-            "spaces".to_string(),
-        ];
-        assert_eq!(
-            parse_args(&args).unwrap(),
-            JulietCommand::Ask {
-                input: Some("path with spaces".to_string())
-            }
-        );
-    }
-
-    #[test]
-    fn parse_args_enforces_next_has_no_args() {
-        let args = vec!["next".to_string()];
-        assert_eq!(parse_args(&args).unwrap(), JulietCommand::Next);
-
-        let args = vec!["next".to_string(), "extra".to_string()];
-        assert!(parse_args(&args).is_err());
-    }
-
-    #[test]
-    fn parse_args_requires_feedback_message() {
-        let args = vec!["feedback".to_string()];
-        assert!(parse_args(&args).is_err());
-
-        let args = vec!["feedback".to_string(), "ok".to_string(), "add".to_string()];
-        assert_eq!(
-            parse_args(&args).unwrap(),
-            JulietCommand::Feedback {
-                message: "ok add".to_string()
-            }
-        );
-    }
 
     #[test]
     fn build_prompt_appends_user_input() {

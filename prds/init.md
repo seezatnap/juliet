@@ -28,16 +28,14 @@ once done, she'll request another review, or ask if the user is ready to go on t
 
 
 
-
-
 the script itself is very thin. there should be:
 
-prompts/(several prompt files in markdown format)
+prompts/juliet.md
 juliet.rs
 
 the prompt contains EVERYTHING that juliet needs to know about using swarm and the process we expect her to follow. she runs one turn at a time, taking the next logical action based on the state of the .juliet folder in the project she's operating within
 
-.juliet/needs-from-operator.md -- what juliet needs from the operator. when the operator runs `juliet next` this will be what she refers to. The user must address the item to remove it from the list.
+.juliet/needs-from-operator.md -- what juliet needs from the operator. when the operator runs `juliet` with no arguments this will be what she refers to. The user must address the item to remove it from the list.
 .juliet/projects.md -- high level projects that juliet is operating at the moment.
 .juliet/processes.md -- processes she spawned previously. check these, clean up the file if they're gone and see what the result of the work was. should be annotateed to explain what command it was running, its purpose, and if it's gone she should check to see what came of the work / what feedback she needs from the operator.
 .juliet/artifacts -- a place where juliet can store files to provide to `swarm` or for herself to learn more about the project between turns.
@@ -45,8 +43,6 @@ the prompt contains EVERYTHING that juliet needs to know about using swarm and t
 
 juliet.rs simply exposes
 
-`juliet ask` -- ask juliet to do something. juliet makes a PRD (possibly from your prd) to start a project. she responds with a confirmation.
-`juliet next` -- juliet asks you something from her needs list. exits immediately. if she has no current needs she tells you what she's working on (what processes and projects are running) and asks you to check back in a bit.
-`juliet feedback "<msg>"` -- you give juliet feedback. she decides what to do about it, then responds with a confirmation.
+`juliet [message]` -- run juliet with an optional message. juliet reads .juliet/ state and the message to decide what to do: init a new project, check status, handle feedback, etc.
 
-internally all of these commands go straight to prompts, which themselves go to `codex` (to start). codex runs in dangerous mode with no confirmations for permission checks (we'll only run juliet in a sandbox). juliet always starts by running `swarm --help` to understand what she has available to her.
+internally the command goes straight to the prompt, which itself goes to `codex` (to start). codex runs in dangerous mode with no confirmations for permission checks (we'll only run juliet in a sandbox). juliet always starts by running `swarm --help` to understand what she has available to her.
