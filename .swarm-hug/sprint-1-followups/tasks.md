@@ -2,7 +2,7 @@
 
 ## Source Comparison
 
-- [ ] (#1) Compile sonnet outputs from `feature/wind-sonnets-try1` and `feature/wind-sonnets-try2` into a side-by-side review matrix, scoring strengths/weaknesses per poem and line (imagery, tone, voice, originality, and duplication) to establish the merge baseline [5 pts]
+- [x] (#1) Compile sonnet outputs from `feature/wind-sonnets-try1` and `feature/wind-sonnets-try2` into a side-by-side review matrix, scoring strengths/weaknesses per poem and line (imagery, tone, voice, originality, and duplication) to establish the merge baseline [5 pts] (A)
 
 ## Editorial Direction
 
@@ -17,3 +17,6 @@
 
 - [ ] (#5) Perform a full editorial pass across all ten drafts to remove weak lines, eliminate cross-sonnet duplication, and normalize diction/voice so the collection reads as one coherent high-quality set [5 pts] (blocked by #3, #4)
 - [ ] (#6) Finalize handoff-ready formatting (clean titles/numbering and presentation), verify acceptance criteria (exactly ten sonnets and clear improvement over either try), and place the deliverable in the sprint output location for reviewer discovery [5 pts] (blocked by #5)
+
+## Follow-up tasks (from sprint review)
+- [ ] (#7) Correct the `Poem-Level Scorecard` `Avg I/T/V/O/D` tuples in `.swarm-hug/sprint-1-followups/sonnet-review-matrix.md` so they match the line-level scores (or relabel them as non-average ratings).

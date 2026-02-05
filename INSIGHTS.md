@@ -10,3 +10,6 @@
 - Swarm-managed branch worktrees live under `.swarm-hug/.shared/worktrees/` with `/` encoded as `%2F` in directory names, which matters for scripted cleanup.
 - Once results are reported and the operator responds, prune stale `Completed` entries from `.juliet/processes.md` to keep state concise; logs and branches preserve the detail.
 - On boot, reconstruct intent from `.juliet/processes.md`, `.juliet/needs-from-operator.md`, and `.juliet/projects.md` before any idle greeting so Juliet resumes in-flight work reliably after restarts.
+- This repo currently has no CI workflows or standard build tooling in the root (no `Cargo.toml`, `Makefile`, or `justfile`), so content-only tasks may not have automated validation commands to run.
+- For this sprint’s follow-up comparison work, the sonnet sources for `feature/wind-sonnets-try1` and `feature/wind-sonnets-try2` are both in `wind-sonnets.md`; try ordering differs by theme, so a thematic crosswalk is useful before line-level scoring.
+- In this environment, a practical sprint output location for reviewer discovery was `.swarm-hug/sprint-1-followups/`; if future sprint scaffolds add an explicit output directory, prefer that instead.
