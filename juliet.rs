@@ -217,9 +217,9 @@ fn initialize_role(
 
     let prompt_path = role_state::role_prompt_path(project_root, role_name);
     let prompt_exists = prompt_path.is_file();
-    let state_exists = role_state::role_state_exists(project_root, role_name);
+    let state_is_scaffolded = role_state::role_state_is_scaffolded(project_root, role_name);
 
-    if prompt_exists && state_exists {
+    if prompt_exists && state_is_scaffolded {
         return Ok(InitOutcome::AlreadyExists);
     }
 
@@ -811,6 +811,38 @@ mod tests {
     }
 
     #[test]
+    fn initialize_role_scaffolds_missing_state_files_when_prompt_and_legacy_dir_exist() {
+        let temp = TestDir::new("artifacts-prompt-and-legacy-dir");
+        let role_name = "artifacts";
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# legacy artifacts prompt").expect("prompt should be created");
+
+        let role_dir = role_state::role_state_dir(temp.path(), role_name);
+        fs::create_dir_all(&role_dir).expect("legacy artifacts directory should be created");
+        fs::write(role_dir.join("legacy-note.txt"), "legacy artifact")
+            .expect("legacy artifacts file should be created");
+
+        let outcome = initialize_role(temp.path(), role_name, "seed prompt")
+            .expect("init should scaffold missing state files");
+        assert_eq!(outcome, InitOutcome::Initialized);
+        assert_eq!(
+            fs::read_to_string(&prompt_path).expect("prompt should remain unchanged"),
+            "# legacy artifacts prompt"
+        );
+
+        assert!(role_state::role_state_is_scaffolded(temp.path(), role_name));
+        assert!(
+            role_state::discover_configured_roles(temp.path())
+                .expect("role discovery should succeed")
+                .iter()
+                .any(|role| role.name == role_name),
+            "artifacts role should be discoverable after scaffolding"
+        );
+    }
+
+    #[test]
     fn initialize_role_creates_missing_prompt_when_state_already_exists() {
         let temp = TestDir::new("state-only");
         let role_name = "program-manager";
@@ -1065,6 +1097,43 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             assert_eq!(second.exit_code, 0);
             assert_eq!(second.stdout, format!("Role already exists: {role_name}\n"));
             assert_eq!(second.stderr, "");
+        }
+
+        #[test]
+        fn cli_init_artifacts_scaffolds_legacy_directory_and_allows_implicit_launch() {
+            let temp = TestDir::new("integration-init-artifacts-legacy-dir");
+            let project_root = create_project_root(&temp);
+            let role_name = "artifacts";
+            let role_prompt = "# Legacy artifacts prompt\n\nUse legacy artifacts role.";
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+                .expect("prompts directory should be created");
+            fs::write(&prompt_path, role_prompt).expect("legacy prompt should be writable");
+
+            let legacy_role_dir = role_state::role_state_dir(&project_root, role_name);
+            fs::create_dir_all(&legacy_role_dir).expect("legacy artifacts directory should exist");
+            fs::write(legacy_role_dir.join("existing-artifact.md"), "legacy artifact")
+                .expect("legacy artifact file should be writable");
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+            assert_eq!(init.stdout, format!("Initialized role: {role_name}\n"));
+            assert_eq!(init.stderr, "");
+            assert!(role_state::role_state_is_scaffolded(&project_root, role_name));
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let launch = run_cli(&project_root, &["codex"], Some(&mock_codex));
+
+            assert_eq!(launch.exit_code, 0);
+            assert_eq!(launch.stdout, "");
+            assert_eq!(launch.stderr, "");
+            assert_eq!(mock_codex.recorded_prompt(), role_prompt);
+            assert_eq!(
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable"),
+                role_prompt
+            );
         }
 
         #[test]
