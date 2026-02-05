@@ -823,4 +823,342 @@ mod tests {
                 .to_string()
         );
     }
+
+    #[cfg(unix)]
+    mod cli_integration_tests {
+        use super::*;
+        use std::env;
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use std::path::{Path, PathBuf};
+        use std::process::Command;
+        use std::sync::OnceLock;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        struct CliOutput {
+            exit_code: i32,
+            stdout: String,
+            stderr: String,
+        }
+
+        struct MockCodex {
+            bin_dir: PathBuf,
+            args_file: PathBuf,
+            stdin_file: PathBuf,
+            exit_code: i32,
+        }
+
+        impl MockCodex {
+            fn new(root: &Path, exit_code: i32) -> Self {
+                let bin_dir = root.join("mock-bin");
+                fs::create_dir_all(&bin_dir).expect("mock bin directory should exist");
+
+                let args_file = root.join("mock-codex-args.txt");
+                let stdin_file = root.join("mock-codex-stdin.txt");
+                let codex_path = bin_dir.join("codex");
+
+                fs::write(
+                    &codex_path,
+                    r#"#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$@" > "${JULIET_TEST_CODEX_ARGS_FILE:?}"
+cat > "${JULIET_TEST_CODEX_STDIN_FILE:?}"
+exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
+"#,
+                )
+                .expect("mock codex script should be writable");
+
+                let mut permissions = fs::metadata(&codex_path)
+                    .expect("mock codex script metadata should be readable")
+                    .permissions();
+                permissions.set_mode(0o755);
+                fs::set_permissions(&codex_path, permissions)
+                    .expect("mock codex script should be executable");
+
+                Self {
+                    bin_dir,
+                    args_file,
+                    stdin_file,
+                    exit_code,
+                }
+            }
+
+            fn configure_command(&self, command: &mut Command) {
+                let existing_path = env::var("PATH").unwrap_or_default();
+                let path_value = if existing_path.is_empty() {
+                    self.bin_dir.display().to_string()
+                } else {
+                    format!("{}:{existing_path}", self.bin_dir.display())
+                };
+
+                command.env("PATH", path_value);
+                command.env("JULIET_TEST_CODEX_ARGS_FILE", &self.args_file);
+                command.env("JULIET_TEST_CODEX_STDIN_FILE", &self.stdin_file);
+                command.env(
+                    "JULIET_TEST_CODEX_EXIT_CODE",
+                    self.exit_code.to_string(),
+                );
+            }
+
+            fn recorded_args(&self) -> Vec<String> {
+                fs::read_to_string(&self.args_file)
+                    .expect("mock codex args capture should be readable")
+                    .lines()
+                    .map(|line| line.to_string())
+                    .collect()
+            }
+
+            fn recorded_prompt(&self) -> String {
+                fs::read_to_string(&self.stdin_file)
+                    .expect("mock codex stdin capture should be readable")
+            }
+        }
+
+        fn cli_binary_path() -> &'static PathBuf {
+            static CLI_BINARY: OnceLock<PathBuf> = OnceLock::new();
+            CLI_BINARY.get_or_init(|| {
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("time drift should not occur in tests")
+                    .as_nanos();
+                let build_root = env::temp_dir().join(format!(
+                    "juliet-cli-integration-bin-{}-{timestamp}",
+                    std::process::id()
+                ));
+                fs::create_dir_all(&build_root)
+                    .expect("cli integration build directory should be created");
+
+                let source_path = env::current_dir()
+                    .expect("test process should have a current directory")
+                    .join("juliet.rs");
+                assert!(
+                    source_path.is_file(),
+                    "expected juliet.rs at {}",
+                    source_path.display()
+                );
+
+                let binary_path = build_root.join("juliet-cli");
+                let output = Command::new("rustc")
+                    .arg(&source_path)
+                    .arg("-o")
+                    .arg(&binary_path)
+                    .output()
+                    .expect("rustc should be invokable for cli integration tests");
+
+                if !output.status.success() {
+                    panic!(
+                        "failed to compile CLI binary\nstatus: {:?}\nstdout:\n{}\nstderr:\n{}",
+                        output.status.code(),
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+
+                binary_path
+            })
+        }
+
+        fn create_project_root(temp: &TestDir) -> PathBuf {
+            let project_root = temp.path().join("project");
+            fs::create_dir_all(&project_root).expect("project root should be created");
+            project_root
+        }
+
+        fn run_cli(
+            project_root: &Path,
+            args: &[&str],
+            mock_codex: Option<&MockCodex>,
+        ) -> CliOutput {
+            let mut command = Command::new(cli_binary_path());
+            command.args(args).current_dir(project_root);
+            if let Some(mock) = mock_codex {
+                mock.configure_command(&mut command);
+            }
+
+            let output = command.output().expect("CLI command should execute");
+            let exit_code = output
+                .status
+                .code()
+                .expect("CLI process should exit with an exit code");
+            CliOutput {
+                exit_code,
+                stdout: String::from_utf8(output.stdout)
+                    .expect("stdout should be valid UTF-8 in tests"),
+                stderr: String::from_utf8(output.stderr)
+                    .expect("stderr should be valid UTF-8 in tests"),
+            }
+        }
+
+        #[test]
+        fn cli_no_args_prints_general_usage_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-no-args");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &[], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, format!("{GENERAL_USAGE}\n"));
+        }
+
+        #[test]
+        fn cli_init_without_role_prints_init_usage_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-init-usage");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["init"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, format!("{INIT_USAGE}\n"));
+        }
+
+        #[test]
+        fn cli_init_with_empty_role_name_prints_invalid_name_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-init-empty-role");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["init", "--role", ""], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Invalid role name: . Use lowercase letters, numbers, and hyphens.\n"
+            );
+        }
+
+        #[test]
+        fn cli_init_is_idempotent_with_exact_messages_and_exit_codes() {
+            let temp = TestDir::new("integration-init-idempotent");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let first = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(first.exit_code, 0);
+            assert_eq!(first.stdout, format!("Initialized role: {role_name}\n"));
+            assert_eq!(first.stderr, "");
+
+            let second = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(second.exit_code, 0);
+            assert_eq!(second.stdout, format!("Role already exists: {role_name}\n"));
+            assert_eq!(second.stderr, "");
+        }
+
+        #[test]
+        fn cli_explicit_role_launch_stages_prompt_and_uses_engine_exit_code() {
+            let temp = TestDir::new("integration-explicit-launch");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-marketing";
+            let role_prompt = "# Explicit role prompt\n\nRun the explicit role workflow.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let role_prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&role_prompt_path, role_prompt).expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let launch = run_cli(
+                &project_root,
+                &["--role", role_name, "codex"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(launch.exit_code, 0);
+            assert_eq!(launch.stdout, "");
+            assert_eq!(launch.stderr, "");
+            assert_eq!(
+                mock_codex.recorded_args(),
+                vec![
+                    "exec".to_string(),
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                    "-C".to_string(),
+                    project_root.display().to_string(),
+                    "-".to_string(),
+                ]
+            );
+            assert_eq!(mock_codex.recorded_prompt(), role_prompt);
+            assert_eq!(
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable"),
+                role_prompt
+            );
+        }
+
+        #[test]
+        fn cli_explicit_role_launch_with_missing_role_prints_not_found_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-explicit-missing");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["--role", "missing-role", "codex"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Role not found: missing-role. Run: juliet init --role missing-role\n"
+            );
+        }
+
+        #[test]
+        fn cli_implicit_launch_with_no_roles_prints_no_roles_message_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-implicit-no-roles");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["codex"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, format!("{NO_ROLES_CONFIGURED_ERROR}\n"));
+        }
+
+        #[test]
+        fn cli_implicit_launch_with_multiple_roles_prints_sorted_list_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-implicit-multi-role");
+            let project_root = create_project_root(&temp);
+            let first_role = "zeta-team";
+            let second_role = "alpha-team";
+
+            let first_init = run_cli(&project_root, &["init", "--role", first_role], None);
+            assert_eq!(first_init.exit_code, 0);
+            let second_init = run_cli(&project_root, &["init", "--role", second_role], None);
+            assert_eq!(second_init.exit_code, 0);
+
+            let output = run_cli(&project_root, &["codex"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team\n"
+            );
+        }
+
+        #[test]
+        fn cli_implicit_single_role_launch_auto_selects_role_and_exits_with_engine_code() {
+            let temp = TestDir::new("integration-implicit-single-role");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+            let role_prompt = "# Implicit role prompt\n\nRun the implicit role workflow.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
+                .expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let launch = run_cli(&project_root, &["codex"], Some(&mock_codex));
+
+            assert_eq!(launch.exit_code, 0);
+            assert_eq!(launch.stdout, "");
+            assert_eq!(launch.stderr, "");
+            assert_eq!(mock_codex.recorded_prompt(), role_prompt);
+            assert_eq!(
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable"),
+                role_prompt
+            );
+        }
+    }
 }

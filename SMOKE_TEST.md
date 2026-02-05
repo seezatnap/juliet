@@ -1,60 +1,78 @@
 # Juliet Smoke Test Checklist
 
-Manual end-to-end checklist for prompt-driven workflow behavior.
+Manual end-to-end checklist for the multi-role CLI workflow.
 
 **Prereqs**
 - [ ] `codex` in `PATH`.
 - [ ] `swarm` in `PATH`.
-- [ ] `tmux` in `PATH`.
+- [ ] Optional: `claude` in `PATH` (if testing Claude launch path).
 - [ ] Repo root as current directory.
 - [ ] `juliet` binary available (for example: `rustc juliet.rs -o juliet`).
 
 **Setup**
 - [ ] Reset state: `rm -rf .juliet`.
-- [ ] Create PRD:
+- [ ] Use a test role name:
 
 ```bash
-cat > prds/foo.md <<'EOF2'
-# Foo
-
-Goal: verify Juliet boot/resume workflow.
-EOF2
-
-PRD_PATH=./prds/foo.md
-PROJECT=foo
+ROLE=director-of-engineering
 ```
 
-**Step 1: Idle Boot Prompt**
+**Step 1: Base Usage Errors**
 - [ ] Run `./juliet`.
-- [ ] Verify conversation-start discovery runs (`swarm --help`, `codex login status`, `claude -p ...`).
-- [ ] Verify response is exactly `Hi, I'm juliet. what do you want to work on today?` when no pending work exists.
-- [ ] Verify `.juliet/session.md` exists and stores available/default engine info.
+- [ ] Verify stderr includes:
+  - `Usage: juliet <command> [options]`
+  - `juliet init --role <name>`
+  - `juliet --role <name> <claude|codex>`
+  - `juliet <claude|codex>`
+- [ ] Verify exit code is non-zero.
 
-**Step 2: Init Project**
-- [ ] Run `./juliet "start a project from $PRD_PATH"`.
-- [ ] Verify `swarm project init $PROJECT --with-prd $PRD_PATH` executes.
-- [ ] Verify the response includes `Got it, i'll get going on that now.` then the tasks review phrase.
-- [ ] Verify `.juliet/projects.md` records project + target branch + tasks path (and specs path when known).
-- [ ] Verify the reviewed tasks file is not left as scaffold/placeholder content and reflects the PRD.
+**Step 2: Init Usage Error**
+- [ ] Run `./juliet init`.
+- [ ] Verify stderr is exactly `Usage: juliet init --role <name>`.
+- [ ] Verify exit code is non-zero.
 
-**Step 3: Start Sprint**
-- [ ] Run `./juliet "just one variation please"`.
-- [ ] Verify startup discovery does not re-run in this same conversation.
-- [ ] If multiple engines are available, verify Juliet asks for per-sprint model choice before launching.
-- [ ] Verify `tmux new-session ... swarm run --project $PROJECT --max-sprints 1 --target-branch feature/$PROJECT --no-tui ...` executes.
-- [ ] Verify `.juliet/processes.md` records PID, command, branch, log path, start time.
+**Step 3: Role Initialization**
+- [ ] Run `./juliet init --role "$ROLE"`.
+- [ ] Verify stdout is `Initialized role: $ROLE`.
+- [ ] Verify `prompts/$ROLE.md` exists.
+- [ ] Verify `.juliet/$ROLE/` exists with:
+  - `session.md`
+  - `needs-from-operator.md`
+  - `projects.md`
+  - `processes.md`
+  - `artifacts/`
+- [ ] Verify `.juliet/$ROLE/juliet-prompt.md` does not exist until launch.
 
-**Step 4: Resume On Boot**
-- [ ] Run `./juliet` while sprint is still running (or shortly after).
-- [ ] Verify Juliet resumes from `.juliet/processes.md` instead of greeting.
-- [ ] Verify running jobs produce `i'm still working`.
-- [ ] When completed, verify results phrase is emitted plus explicit feedback request with feature-branch checkout guidance.
+**Step 4: Init Idempotency**
+- [ ] Run `./juliet init --role "$ROLE"` again.
+- [ ] Verify stdout is `Role already exists: $ROLE`.
+- [ ] Verify exit code is `0`.
 
-**Step 5: Feedback Reconciliation**
-- [ ] Make edits on the feature branch.
-- [ ] Run `./juliet "I changed X and want Y next"`.
-- [ ] Verify Juliet updates out-of-date future tasks/specs only to reflect user feedback/edits.
-- [ ] Verify Juliet does not invent extra scope without asking.
+**Step 5: Explicit Launch**
+- [ ] Run `./juliet --role "$ROLE" codex "status check"` (or `claude` if preferred).
+- [ ] Verify the selected engine is invoked.
+- [ ] Verify `.juliet/$ROLE/juliet-prompt.md` is written from `prompts/$ROLE.md`.
+- [ ] Verify operator input is appended as:
+  - `User input:`
+  - `status check`
 
-**Thin Wrapper Validation**
-- [ ] Confirm `juliet.rs` still only dispatches prompts to `codex` with optional user input.
+**Step 6: Implicit Launch (Single Role)**
+- [ ] Ensure only one configured role exists under `.juliet/`.
+- [ ] Run `./juliet codex`.
+- [ ] Verify launch succeeds without `--role`.
+
+**Step 7: No Roles Configured Guidance**
+- [ ] In a clean temp directory with no `.juliet/<role>/` state, run `<path-to-juliet> codex`.
+- [ ] Verify stderr is `No roles configured. Run: juliet init --role <name>`.
+- [ ] Verify exit code is non-zero.
+
+**Step 8: Multiple Roles Guidance**
+- [ ] Create a second role: `./juliet init --role director-of-marketing`.
+- [ ] Run `./juliet codex`.
+- [ ] Verify stderr starts with `Multiple roles found. Specify one with --role <name>:` and lists both role names on separate lines.
+- [ ] Verify exit code is non-zero.
+
+**Step 9: Role Name Validation**
+- [ ] Run `./juliet init --role Invalid_Name`.
+- [ ] Verify stderr is `Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens.`
+- [ ] Verify exit code is non-zero.
