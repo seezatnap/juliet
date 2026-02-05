@@ -1,2 +1,4 @@
 - Swarm project init leaves a placeholder `tasks.md`; populate it from the PRD before asking the operator for variation count.
 - Keep PRDs and task lists scoped to the user request; avoid injecting the Rust CLI constraint into unrelated content tasks.
+
+- `swarm project init --with-prd` can fail if the default engine (claude) is unavailable; it falls back to the default `tasks.md` and prints a warning.
