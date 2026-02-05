@@ -2,7 +2,7 @@
 
 ## Source Comparison
 
-- [x] (#1) Compile sonnet outputs from `feature/wind-sonnets-try1` and `feature/wind-sonnets-try2` into a side-by-side review matrix, scoring strengths/weaknesses per poem and line (imagery, tone, voice, originality, and duplication) to establish the merge baseline [5 pts]
+- [x] (#1) Compile sonnet outputs from `feature/wind-sonnets-try1` and `feature/wind-sonnets-try2` into a side-by-side review matrix, scoring strengths/weaknesses per poem and line (imagery, tone, voice, originality, and duplication) to establish the merge baseline [5 pts] (A)
 
 ## Editorial Direction
 
