@@ -4,6 +4,8 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+mod role_name;
+
 const PROMPT_FILE: &str = "prompts/juliet.md";
 
 fn build_prompt(base: &str, user_input: Option<&str>) -> String {
