@@ -7,3 +7,5 @@
 - The `claude` CLI may not be here; in this case use `codex` for `swarm` engine selection (if it is available).
 - Swarm logs may not emit a results path; if none is present, treat the target branch as the results location.
 - This repo currently has no CI workflows or standard build tooling in the root (no `Cargo.toml`, `Makefile`, or `justfile`), so content-only tasks may not have automated validation commands to run.
+- For this sprint’s follow-up comparison work, the sonnet sources for `feature/wind-sonnets-try1` and `feature/wind-sonnets-try2` are both in `wind-sonnets.md`; try ordering differs by theme, so a thematic crosswalk is useful before line-level scoring.
+- In this environment, a practical sprint output location for reviewer discovery was `.swarm-hug/sprint-1-followups/`; if future sprint scaffolds add an explicit output directory, prefer that instead.
