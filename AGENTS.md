@@ -8,4 +8,4 @@ Juliet is a minimal Rust CLI wrapper around Codex. The CLI only selects a prompt
 Expected binary list for juliet:
 * `swarm`
 
-IMPORTANT: As you learn your way through this project, please write insights into INSIGHTS.md to help future iterations.
+IMPORTANT: As you learn your way through this project, please write insights into INSIGHTS.md to help future iterations. Note that environmental issues MAY be the case in the future, but not necessarily. Couch your entries with this in mind.
