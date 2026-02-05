@@ -24,7 +24,7 @@
 
 ## Documentation
 
-- [A] (#11) Update README/help documentation for the multi-role workflow, including role initialization, launching with/without `--role`, naming constraints, `.juliet/<role>/` layout, prompt file locations, and guidance for projects with no configured roles [5 pts] (blocked by #5, #7, #8)
+- [x] (#11) Update README/help documentation for the multi-role workflow, including role initialization, launching with/without `--role`, naming constraints, `.juliet/<role>/` layout, prompt file locations, and guidance for projects with no configured roles [5 pts] (blocked by #5, #7, #8)
 
 ## Follow-up tasks (from sprint review)
 - [x] (#12) Restore launch-time user input passthrough (removed in the CLI refactor) so explicit and implicit role runs append operator input to the prompt before invoking the engine (blocked by #6, #7) (B)
