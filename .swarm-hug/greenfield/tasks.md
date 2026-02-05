@@ -13,7 +13,7 @@
 
 ## Integration & Validation
 
-- [ ] (#4) Create a smoke-test script or checklist that exercises the full scenario (init from PRD path, tasks review + variation count, sprint run, results review, “add a test” follow-up sprint) and verifies expected `.juliet` files and `swarm` commands; end constraint: validate behavior without expanding the Rust CLI beyond a thin wrapper. [5 pts] (blocked by #1, #2, #3)
+- [A] (#4) Create a smoke-test script or checklist that exercises the full scenario (init from PRD path, tasks review + variation count, sprint run, results review, “add a test” follow-up sprint) and verifies expected `.juliet` files and `swarm` commands; end constraint: validate behavior without expanding the Rust CLI beyond a thin wrapper. [5 pts] (blocked by #1, #2, #3)
 
 ## Documentation
 
