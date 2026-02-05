@@ -70,7 +70,8 @@ pub fn discover_configured_roles(project_root: &Path) -> io::Result<Vec<Configur
             Err(_) => continue,
         };
 
-        if role_name == ARTIFACTS_DIR {
+        let role_dir = entry.path();
+        if role_name == ARTIFACTS_DIR && !has_role_state_layout(&role_dir) {
             continue;
         }
 
@@ -94,6 +95,11 @@ pub fn write_runtime_prompt(project_root: &Path, role_name: &str, prompt: &str) 
     }
 
     fs::write(runtime_prompt_path(project_root, role_name), prompt)
+}
+
+fn has_role_state_layout(role_dir: &Path) -> bool {
+    STATE_FILES.iter().all(|file| role_dir.join(file).is_file())
+        && role_dir.join(ARTIFACTS_DIR).is_dir()
 }
 
 fn ensure_file(path: &Path) -> io::Result<()> {
@@ -315,6 +321,22 @@ mod tests {
                     prompt_path: role_prompt_path(temp.path(), "juliet"),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn discover_configured_roles_includes_artifacts_when_it_has_role_state_layout() {
+        let temp = TestDir::new("discover-artifacts-role");
+        create_role_state(temp.path(), ARTIFACTS_DIR)
+            .expect("artifacts role state should be created");
+
+        let roles = discover_configured_roles(temp.path()).expect("discovery should succeed");
+        assert_eq!(
+            roles,
+            vec![ConfiguredRole {
+                name: ARTIFACTS_DIR.to_string(),
+                prompt_path: role_prompt_path(temp.path(), ARTIFACTS_DIR),
+            }]
         );
     }
 
