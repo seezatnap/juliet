@@ -15,7 +15,7 @@
 
 ## Error Handling & Compatibility
 
-- [x] (#8) Normalize output text and exit codes for all PRD-defined scenarios (invalid name, missing role, missing args, zero/multiple roles, idempotent init) and ensure successful run paths return the spawned engine’s exit code [5 pts] (blocked by #5, #6, #7)
+- [x] (#8) Normalize output text and exit codes for all PRD-defined scenarios (invalid name, missing role, missing args, zero/multiple roles, idempotent init) and ensure successful run paths return the spawned engine’s exit code [5 pts] (blocked by #5, #6, #7) (A)
 
 ## Testing
 
@@ -27,10 +27,10 @@
 - [ ] (#11) Update README/help documentation for the multi-role workflow, including role initialization, launching with/without `--role`, naming constraints, `.juliet/<role>/` layout, prompt file locations, and guidance for projects with no configured roles [5 pts] (blocked by #5, #7, #8)
 
 ## Follow-up tasks (from sprint review)
-- [B] (#12) Restore launch-time user input passthrough (removed in the CLI refactor) so explicit and implicit role runs append operator input to the prompt before invoking the engine (blocked by #6, #7)
+- [x] (#12) Restore launch-time user input passthrough (removed in the CLI refactor) so explicit and implicit role runs append operator input to the prompt before invoking the engine (blocked by #6, #7) (B)
 
 ## Follow-up tasks (from sprint review)
 - [x] (#13) Validate `juliet --role <name> <claude|codex>` with the existing role-name rules before building paths so invalid or traversal inputs (for example `../...`) are rejected with the invalid-name error instead of reading/writing outside `.juliet/<role>/`. (A)
 
 ## Follow-up tasks (from sprint review)
-- [A] (#14) Resolve inconsistent handling of role name `juliet`: `juliet init --role juliet` succeeds, but implicit launch ignores `.juliet/juliet` and returns `No roles configured`; either reserve `juliet` in role validation/init or include it in role discovery, and add regression coverage.
+- [x] (#14) Resolve inconsistent handling of role name `juliet`: `juliet init --role juliet` succeeds, but implicit launch ignores `.juliet/juliet` and returns `No roles configured`; either reserve `juliet` in role validation/init or include it in role discovery, and add regression coverage. (A)
