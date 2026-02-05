@@ -15,3 +15,5 @@
 - In this environment, a practical sprint output location for reviewer discovery was `.swarm-hug/sprint-1-followups/`; if future sprint scaffolds add an explicit output directory, prefer that instead.
 - Swarm project planning files are lowercase (`tasks.md`, `specs.md`) under `.swarm-hug/<project>/`; probing uppercase variants (`TASKS.md`, `SPECS.md`) can silently miss real project state.
 - `git merge --autostash` can leave an `autostash` entry and mark files as staged after conflict recovery; verify `git diff --stat` matches stash contents before dropping it and restore unstaged state if needed.
+- This project compiles as a single-file Rust binary without `Cargo.toml`; reusable helpers can live in sibling `*.rs` modules (via `mod ...`) and be validated with `rustc juliet.rs` plus `rustc --test juliet.rs`.
+- For CLI shape changes in this repo, modeling parsing as a typed enum (`Init` vs `Launch`) plus centralized usage-string errors makes `rustc --test juliet.rs` coverage straightforward and reduces dependence on external `codex`/`claude` binaries during validation.
