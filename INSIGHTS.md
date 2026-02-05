@@ -6,3 +6,4 @@
 - In `juliet next`, report completed results once per process (track with `reported_on` in `.juliet/processes.md`) even if other runs are still active, and avoid adding a needs entry until all runs finish.
 - The `claude` CLI may not be here; in this case use `codex` for `swarm` engine selection (if it is available).
 - Swarm logs may not emit a results path; if none is present, treat the target branch as the results location.
+- This repo currently has no CI workflows or standard build tooling in the root (no `Cargo.toml`, `Makefile`, or `justfile`), so content-only tasks may not have automated validation commands to run.
