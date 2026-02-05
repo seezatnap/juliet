@@ -9,8 +9,8 @@
 ## CLI Command Flows
 
 - [x] (#4) Refactor CLI parsing/routing to support `juliet init --role <name>`, `juliet --role <name> <claude|codex>`, and `juliet <claude|codex>`, including required usage errors for missing arguments (`juliet` with no args and `juliet init` without `--role`) [5 pts] (A)
-- [ ] (#5) Implement `juliet init --role <role_name>` end-to-end: validate role name, create `prompts/<role>.md` starter template (role heading + operator placeholder, optionally seeded from embedded default prompt), create role state structure, print `Initialized role: <role_name>`, and return `Role already exists: <role_name>` with exit code 0 when prompt file and state dir both already exist [5 pts] (blocked by #2, #4)
-- [ ] (#6) Implement explicit-role launch `juliet --role <role_name> <claude|codex>`: verify role exists via `.juliet/<role>/`, read `prompts/<role>.md`, write prompt content to `.juliet/<role>/juliet-prompt.md`, and launch engine with the same initial-message behavior as current implementation [5 pts] (blocked by #3, #4)
+- [A] (#5) Implement `juliet init --role <role_name>` end-to-end: validate role name, create `prompts/<role>.md` starter template (role heading + operator placeholder, optionally seeded from embedded default prompt), create role state structure, print `Initialized role: <role_name>`, and return `Role already exists: <role_name>` with exit code 0 when prompt file and state dir both already exist [5 pts] (blocked by #2, #4)
+- [A] (#6) Implement explicit-role launch `juliet --role <role_name> <claude|codex>`: verify role exists via `.juliet/<role>/`, read `prompts/<role>.md`, write prompt content to `.juliet/<role>/juliet-prompt.md`, and launch engine with the same initial-message behavior as current implementation [5 pts] (blocked by #3, #4)
 - [ ] (#7) Implement implicit-role launch `juliet <claude|codex>` (no `--role`): discover roles from `.juliet/`, auto-select when exactly one role exists, fail with `No roles configured. Run: juliet init --role <name>` for zero roles, and fail with `Multiple roles found. Specify one with --role <name>:` followed by newline-separated role names when multiple roles exist [5 pts] (blocked by #3, #4, #6)
 
 ## Error Handling & Compatibility
@@ -19,7 +19,7 @@
 
 ## Testing
 
-- [ ] (#9) Add unit tests for role validation, state scaffolding helpers, and role discovery filtering/mapping behavior (including edge cases for invalid names, non-directory entries, and excluded directories) [5 pts] (blocked by #1, #2, #3)
+- [x] (#9) Add unit tests for role validation, state scaffolding helpers, and role discovery filtering/mapping behavior (including edge cases for invalid names, non-directory entries, and excluded directories) [5 pts] (blocked by #1, #2, #3) (B)
 - [ ] (#10) Add integration/CLI tests that cover the full scenario matrix and exact message/exit-code expectations from the PRD, including `init` idempotency, explicit role launch, implicit single-role auto-selection, and all specified failures [5 pts] (blocked by #5, #6, #7, #8, #9)
 
 ## Documentation
