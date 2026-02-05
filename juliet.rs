@@ -290,6 +290,32 @@ fn prepare_launch_prompt(project_root: &Path, role_name: Option<&str>) -> Result
     }
 }
 
+fn run_launch_command_in_dir<F>(
+    project_root: &Path,
+    role_name: Option<&str>,
+    engine: Engine,
+    engine_runner: F,
+) -> i32
+where
+    F: FnOnce(Engine, &str, &Path) -> io::Result<i32>,
+{
+    let prompt = match prepare_launch_prompt(project_root, role_name) {
+        Ok(contents) => contents,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
+
+    match engine_runner(engine, &prompt, project_root) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to run engine: {err}");
+            1
+        }
+    }
+}
+
 fn run_launch_command(role_name: Option<&str>, engine: Engine) -> i32 {
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
@@ -299,21 +325,7 @@ fn run_launch_command(role_name: Option<&str>, engine: Engine) -> i32 {
         }
     };
 
-    let prompt = match prepare_launch_prompt(&cwd, role_name) {
-        Ok(contents) => contents,
-        Err(err) => {
-            eprintln!("{err}");
-            return 1;
-        }
-    };
-
-    match run_engine(engine, &prompt, &cwd) {
-        Ok(code) => code,
-        Err(err) => {
-            eprintln!("failed to run engine: {err}");
-            1
-        }
-    }
+    run_launch_command_in_dir(&cwd, role_name, engine, run_engine)
 }
 
 fn main() {
@@ -424,6 +436,13 @@ mod tests {
     }
 
     #[test]
+    fn usage_error_when_explicit_role_launch_is_missing_engine() {
+        let error = parse_cli_command(&to_args(&["--role", "director-of-engineering"])).unwrap_err();
+        assert_eq!(error, CliError::Usage);
+        assert_eq!(error.message(), GENERAL_USAGE);
+    }
+
+    #[test]
     fn prepare_launch_prompt_fails_when_explicit_role_is_missing() {
         let temp = TestDir::new("launch-missing-role");
 
@@ -487,6 +506,37 @@ mod tests {
     }
 
     #[test]
+    fn run_launch_command_in_dir_returns_engine_exit_code_for_explicit_role() {
+        let temp = TestDir::new("launch-explicit-engine-exit");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Explicit prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_launch_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Codex,
+            |engine, prompt, cwd| {
+                captured_engine = Some(engine);
+                captured_prompt = prompt.to_string();
+                assert_eq!(cwd, temp.path());
+                Ok(5)
+            },
+        );
+
+        assert_eq!(exit_code, 5);
+        assert_eq!(captured_engine, Some(Engine::Codex));
+        assert_eq!(captured_prompt, "# Explicit prompt\n\nDo role work.");
+    }
+
+    #[test]
     fn prepare_launch_prompt_fails_when_implicit_launch_has_no_roles() {
         let temp = TestDir::new("launch-implicit-no-roles");
         let prompts_dir = temp.path().join("prompts");
@@ -519,6 +569,32 @@ mod tests {
             fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
                 .expect("runtime prompt should be written");
         assert_eq!(runtime_prompt, prompt);
+    }
+
+    #[test]
+    fn run_launch_command_in_dir_returns_engine_exit_code_for_implicit_single_role_launch() {
+        let temp = TestDir::new("launch-implicit-engine-exit");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Implicit prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_launch_command_in_dir(temp.path(), None, Engine::Claude, |engine, prompt, cwd| {
+            captured_engine = Some(engine);
+            captured_prompt = prompt.to_string();
+            assert_eq!(cwd, temp.path());
+            Ok(5)
+        });
+
+        assert_eq!(exit_code, 5);
+        assert_eq!(captured_engine, Some(Engine::Claude));
+        assert_eq!(captured_prompt, "# Implicit prompt\n\nDo role work.");
     }
 
     #[test]

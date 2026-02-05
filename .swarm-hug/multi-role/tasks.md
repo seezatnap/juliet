@@ -15,7 +15,7 @@
 
 ## Error Handling & Compatibility
 
-- [A] (#8) Normalize output text and exit codes for all PRD-defined scenarios (invalid name, missing role, missing args, zero/multiple roles, idempotent init) and ensure successful run paths return the spawned engine’s exit code [5 pts] (blocked by #5, #6, #7)
+- [x] (#8) Normalize output text and exit codes for all PRD-defined scenarios (invalid name, missing role, missing args, zero/multiple roles, idempotent init) and ensure successful run paths return the spawned engine’s exit code [5 pts] (blocked by #5, #6, #7)
 
 ## Testing
 
