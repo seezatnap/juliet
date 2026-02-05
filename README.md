@@ -1,46 +1,68 @@
 # Juliet
 
-A minimal Rust CLI wrapper around Codex. The CLI reads a single prompt file and passes optional user input to Codex; all workflow logic, state transitions, and user-facing behavior live in prompt markdown.
+A minimal Rust CLI wrapper around Claude/Codex. The CLI selects a role prompt, appends optional operator input, and hands the final prompt to an engine; workflow behavior lives in markdown prompts plus `.juliet/<role>/` state.
 
 **Usage**
 ```bash
-juliet [message]
+juliet init --role <name>
+juliet --role <name> <claude|codex> [operator input...]
+juliet <claude|codex> [operator input...]
 ```
 
-- `juliet` with no arguments: Juliet resumes from `.juliet/` state and takes the next logical action.
-- `juliet "start a project from ~/prds/foo.md"`: Juliet handles new project initialization.
+- `juliet` with no args prints usage and exits with code `1`.
+- `juliet init` without `--role <name>` prints `Usage: juliet init --role <name>` and exits with code `1`.
 
-**Prompt File**
-- `prompts/juliet.md`: unified workflow instructions.
+**Role Initialization**
+- Create or repair a role with `juliet init --role <name>`.
+- Success output: `Initialized role: <name>`.
+- If both `prompts/<name>.md` and `.juliet/<name>/` already exist, init is idempotent and prints `Role already exists: <name>`.
+- Init seeds `prompts/<name>.md` with a role heading, an operator placeholder, and the embedded default prompt content from `prompts/juliet.md`.
 
-**State (.juliet)**
-- `.juliet/session.md`: per-conversation bootstrap cache (available engines, default engine, swarm engine syntax).
-- `.juliet/needs-from-operator.md`: queue of unresolved operator needs.
-- `.juliet/projects.md`: active project metadata (PRD/tasks/specs/branches).
-- `.juliet/processes.md`: active and completed long-running `swarm run` jobs.
-- `.juliet/artifacts/`: helper artifacts and generated PRDs.
+**Role Launch**
+- Explicit role: `juliet --role <name> <claude|codex> [operator input...]`.
+- Implicit role: `juliet <claude|codex> [operator input...]`.
+- Explicit launch fails with `Role not found: <name>. Run: juliet init --role <name>` when `.juliet/<name>/` is missing.
+- Each launch reads `prompts/<name>.md`, writes it to `.juliet/<name>/juliet-prompt.md`, appends optional `User input:` text, then invokes the selected engine.
 
-**Boot/Resume Rules**
-- On every turn, Juliet first rehydrates context from `.juliet/needs-from-operator.md`, `.juliet/projects.md`, and `.juliet/processes.md`.
-- Environment discovery (`swarm --help`, engine checks) runs only at conversation start and is cached in `.juliet/session.md`.
-- Discovery re-runs only if `.juliet/session.md` is missing, marked reset-required, or the operator asks to refresh.
+**Launch Without `--role`**
+- Juliet discovers configured roles from `.juliet/` subdirectories.
+- `0` roles: prints `No roles configured. Run: juliet init --role <name>` and exits with code `1`.
+- `1` role: auto-selects that role and launches.
+- `>1` roles: prints `Multiple roles found. Specify one with --role <name>:` followed by a newline-separated list of role names, then exits with code `1`.
 
-**Expected Response Text (Exact Phrases)**
-- `Hi, I'm juliet. what do you want to work on today?`
-- `Got it, i'll get going on that now.`
-- `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
-- `i'm still working`
-- (more sprints remain) `here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks.`
-- (project complete) `here's the results: <pathtofiles>. looks like everything's done - let me know if you'd like any changes.`
+**Role Name Constraints**
+- Allowed pattern: `[a-z0-9-]+`.
+- Names must be non-empty and cannot start or end with `-`.
+- Invalid names fail with: `Invalid role name: <name>. Use lowercase letters, numbers, and hyphens.`
 
-**Swarm Execution Rules**
-1. At conversation start: run `swarm --help`, `codex login status`, and `claude -p "PRINT exactly 'CLAUDE_READY'"`.
-2. For project setup: run `swarm project init <project> --with-prd <prd_path> <engine-arg>`.
-3. Canonical planning files are lowercase: `.swarm-hug/<project>/tasks.md` and `.swarm-hug/<project>/specs.md`.
-4. If init leaves placeholder `tasks.md`, regenerate concrete tasks from the PRD before asking for variation count.
-5. If a selected engine is unavailable and another cached engine exists, retry once with the alternate engine.
-6. For sprint runs: run in background via `tmux` and always include `--no-tui` and `--target-branch`.
-7. For each sprint, ask model choice only if multiple engines are available; if one engine is available, use it automatically.
-8. After sprint results, ask for feedback, instruct the user to check out the feature branch and edit directly if desired, then reconcile tasks/specs only to reflect approved feedback/user edits.
+**Project Layout**
+```text
+prompts/
+  juliet.md                    # legacy/default seed prompt, not a configured role by itself
+  <role>.md                    # role-specific prompt source
 
-The Rust CLI remains intentionally thin: it dispatches prompt + optional user input to Codex and does not implement workflow behavior.
+.juliet/
+  <role>/
+    session.md
+    needs-from-operator.md
+    projects.md
+    processes.md
+    artifacts/
+    juliet-prompt.md           # runtime copy written at launch
+```
+
+Configured roles are discovered from `.juliet/<role>/` directories. A `prompts/<role>.md` file without matching state directory is not treated as configured.
+
+**No Roles Yet?**
+- In a fresh project, run:
+```bash
+juliet init --role director-of-engineering
+```
+- Then launch with either:
+```bash
+juliet --role director-of-engineering codex
+# or, with one configured role:
+juliet codex
+```
+
+The Rust CLI stays intentionally thin: prompt + state selection and engine dispatch happen in code, while workflow policy remains in prompt markdown.
