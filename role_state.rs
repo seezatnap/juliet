@@ -116,6 +116,10 @@ fn ensure_file(path: &Path) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::env;
+    #[cfg(unix)]
+    use std::ffi::OsString;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
     use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -177,6 +181,28 @@ mod tests {
     }
 
     #[test]
+    fn state_path_helpers_are_scoped_under_project_root() {
+        let temp = TestDir::new("path-helpers");
+        let role_name = "operations";
+
+        assert_eq!(
+            role_state_dir(temp.path(), role_name),
+            temp.path().join(JULIET_STATE_DIR).join(role_name)
+        );
+        assert_eq!(
+            role_prompt_path(temp.path(), role_name),
+            temp.path().join(PROMPTS_DIR).join("operations.md")
+        );
+        assert_eq!(
+            runtime_prompt_path(temp.path(), role_name),
+            temp.path()
+                .join(JULIET_STATE_DIR)
+                .join(role_name)
+                .join(RUNTIME_PROMPT_FILE)
+        );
+    }
+
+    #[test]
     fn create_role_state_is_idempotent_and_preserves_file_contents() {
         let temp = TestDir::new("idempotent");
         let role_name = "director-of-marketing";
@@ -189,6 +215,25 @@ mod tests {
 
         let contents = fs::read_to_string(session_path).expect("session.md should remain readable");
         assert_eq!(contents, "cached session contents");
+    }
+
+    #[test]
+    fn create_role_state_errors_when_expected_state_file_path_is_a_directory() {
+        let temp = TestDir::new("state-file-collision");
+        let role_name = "engineering";
+        let role_dir = role_state_dir(temp.path(), role_name);
+        fs::create_dir_all(role_dir.join("session.md"))
+            .expect("directory should occupy an expected state file path");
+
+        let err = create_role_state(temp.path(), role_name)
+            .expect_err("scaffold should fail when file path is not a file");
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert!(
+            err.to_string()
+                .contains("expected file path, found non-file:"),
+            "unexpected error message: {}",
+            err
+        );
     }
 
     #[test]
@@ -268,6 +313,50 @@ mod tests {
                     prompt_path: role_prompt_path(temp.path(), "director-of-marketing"),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn discover_configured_roles_returns_names_in_sorted_order() {
+        let temp = TestDir::new("discover-sorted");
+        let state_root = temp.path().join(JULIET_STATE_DIR);
+        fs::create_dir_all(state_root.join("zeta-team")).expect("zeta role should be created");
+        fs::create_dir_all(state_root.join("alpha-team")).expect("alpha role should be created");
+
+        let roles = discover_configured_roles(temp.path()).expect("discovery should succeed");
+        assert_eq!(
+            roles,
+            vec![
+                ConfiguredRole {
+                    name: "alpha-team".to_string(),
+                    prompt_path: role_prompt_path(temp.path(), "alpha-team"),
+                },
+                ConfiguredRole {
+                    name: "zeta-team".to_string(),
+                    prompt_path: role_prompt_path(temp.path(), "zeta-team"),
+                },
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_configured_roles_ignores_non_utf8_directory_names() {
+        let temp = TestDir::new("discover-non-utf8");
+        let state_root = temp.path().join(JULIET_STATE_DIR);
+        fs::create_dir_all(state_root.join("qa")).expect("qa role should be created");
+
+        let invalid_name = OsString::from_vec(vec![b'n', b'a', b'm', b'e', 0xFF]);
+        fs::create_dir_all(state_root.join(PathBuf::from(invalid_name)))
+            .expect("non-utf8 directory should be created");
+
+        let roles = discover_configured_roles(temp.path()).expect("discovery should succeed");
+        assert_eq!(
+            roles,
+            vec![ConfiguredRole {
+                name: "qa".to_string(),
+                prompt_path: role_prompt_path(temp.path(), "qa"),
+            }]
         );
     }
 }

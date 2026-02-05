@@ -67,4 +67,25 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn allows_consecutive_hyphens_when_not_on_edges() {
+        for valid_name in ["0", "123", "eng--ops", "team-01--alpha"] {
+            assert!(is_valid_role_name(valid_name));
+            assert_eq!(validate_role_name(valid_name), Ok(()));
+        }
+    }
+
+    #[test]
+    fn rejects_whitespace_and_path_like_names_without_trimming() {
+        for invalid_name in [" role", "role ", "role/name", "role.name"] {
+            assert!(!is_valid_role_name(invalid_name));
+            assert_eq!(
+                validate_role_name(invalid_name),
+                Err(format!(
+                    "Invalid role name: {invalid_name}. Use lowercase letters, numbers, and hyphens."
+                ))
+            );
+        }
+    }
 }
