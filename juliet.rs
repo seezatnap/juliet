@@ -40,6 +40,7 @@ enum CliCommand {
     Launch {
         role_name: Option<String>,
         engine: Engine,
+        operator_input: Option<String>,
     },
 }
 
@@ -87,7 +88,7 @@ fn parse_init_command(args: &[String]) -> Result<CliCommand, CliError> {
 }
 
 fn parse_explicit_role_launch(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 3 {
+    if args.len() < 3 {
         return Err(CliError::Usage);
     }
 
@@ -99,11 +100,12 @@ fn parse_explicit_role_launch(args: &[String]) -> Result<CliCommand, CliError> {
     Ok(CliCommand::Launch {
         role_name: Some(args[1].clone()),
         engine,
+        operator_input: parse_operator_input(&args[3..]),
     })
 }
 
 fn parse_implicit_role_launch(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 1 {
+    if args.is_empty() {
         return Err(CliError::Usage);
     }
 
@@ -115,7 +117,16 @@ fn parse_implicit_role_launch(args: &[String]) -> Result<CliCommand, CliError> {
     Ok(CliCommand::Launch {
         role_name: None,
         engine,
+        operator_input: parse_operator_input(&args[1..]),
     })
+}
+
+fn parse_operator_input(args: &[String]) -> Option<String> {
+    if args.is_empty() {
+        None
+    } else {
+        Some(args.join(" "))
+    }
 }
 
 fn run_codex(prompt: &str, cwd: &Path) -> io::Result<i32> {
@@ -150,6 +161,14 @@ fn run_engine(engine: Engine, prompt: &str, cwd: &Path) -> io::Result<i32> {
     match engine {
         Engine::Claude => run_claude(prompt, cwd),
         Engine::Codex => run_codex(prompt, cwd),
+    }
+}
+
+fn build_launch_prompt(base: &str, operator_input: Option<&str>) -> String {
+    if let Some(input) = operator_input {
+        format!("{base}\n\nUser input:\n{input}")
+    } else {
+        base.to_string()
     }
 }
 
@@ -290,16 +309,17 @@ fn prepare_launch_prompt(project_root: &Path, role_name: Option<&str>) -> Result
     }
 }
 
-fn run_launch_command(role_name: Option<&str>, engine: Engine) -> i32 {
-    let cwd = match env::current_dir() {
-        Ok(dir) => dir,
-        Err(err) => {
-            eprintln!("failed to get current directory: {err}");
-            return 1;
-        }
-    };
-
-    let prompt = match prepare_launch_prompt(&cwd, role_name) {
+fn run_launch_command_in_dir<F>(
+    project_root: &Path,
+    role_name: Option<&str>,
+    engine: Engine,
+    operator_input: Option<&str>,
+    engine_runner: F,
+) -> i32
+where
+    F: FnOnce(Engine, &str, &Path) -> io::Result<i32>,
+{
+    let prompt = match prepare_launch_prompt(project_root, role_name) {
         Ok(contents) => contents,
         Err(err) => {
             eprintln!("{err}");
@@ -307,7 +327,9 @@ fn run_launch_command(role_name: Option<&str>, engine: Engine) -> i32 {
         }
     };
 
-    match run_engine(engine, &prompt, &cwd) {
+    let prompt = build_launch_prompt(&prompt, operator_input);
+
+    match engine_runner(engine, &prompt, project_root) {
         Ok(code) => code,
         Err(err) => {
             eprintln!("failed to run engine: {err}");
@@ -316,6 +338,17 @@ fn run_launch_command(role_name: Option<&str>, engine: Engine) -> i32 {
     }
 }
 
+fn run_launch_command(role_name: Option<&str>, engine: Engine, operator_input: Option<&str>) -> i32 {
+    let cwd = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    run_launch_command_in_dir(&cwd, role_name, engine, operator_input, run_engine)
+}
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let command = match parse_cli_command(&args) {
@@ -328,9 +361,11 @@ fn main() {
 
     let exit_code = match command {
         CliCommand::Init { role_name } => run_init_command(&role_name),
-        CliCommand::Launch { role_name, engine } => {
-            run_launch_command(role_name.as_deref(), engine)
-        }
+        CliCommand::Launch {
+            role_name,
+            engine,
+            operator_input,
+        } => run_launch_command(role_name.as_deref(), engine, operator_input.as_deref()),
     };
 
     std::process::exit(exit_code);
@@ -393,7 +428,8 @@ mod tests {
             parse_cli_command(&to_args(&["--role", "director-of-engineering", "codex"])),
             Ok(CliCommand::Launch {
                 role_name: Some("director-of-engineering".to_string()),
-                engine: Engine::Codex
+                engine: Engine::Codex,
+                operator_input: None,
             })
         );
     }
@@ -404,7 +440,39 @@ mod tests {
             parse_cli_command(&to_args(&["claude"])),
             Ok(CliCommand::Launch {
                 role_name: None,
-                engine: Engine::Claude
+                engine: Engine::Claude,
+                operator_input: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_explicit_role_launch_with_operator_input() {
+        assert_eq!(
+            parse_cli_command(&to_args(&[
+                "--role",
+                "director-of-engineering",
+                "codex",
+                "start",
+                "from",
+                "~/prds/foo.md",
+            ])),
+            Ok(CliCommand::Launch {
+                role_name: Some("director-of-engineering".to_string()),
+                engine: Engine::Codex,
+                operator_input: Some("start from ~/prds/foo.md".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_implicit_role_launch_with_operator_input() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["claude", "continue", "project", "alpha"])),
+            Ok(CliCommand::Launch {
+                role_name: None,
+                engine: Engine::Claude,
+                operator_input: Some("continue project alpha".to_string()),
             })
         );
     }
@@ -421,6 +489,13 @@ mod tests {
         let error = parse_cli_command(&to_args(&["init"])).unwrap_err();
         assert_eq!(error, CliError::InitUsage);
         assert_eq!(error.message(), INIT_USAGE);
+    }
+
+    #[test]
+    fn usage_error_when_explicit_role_launch_is_missing_engine() {
+        let error = parse_cli_command(&to_args(&["--role", "director-of-engineering"])).unwrap_err();
+        assert_eq!(error, CliError::Usage);
+        assert_eq!(error.message(), GENERAL_USAGE);
     }
 
     #[test]
@@ -487,6 +562,38 @@ mod tests {
     }
 
     #[test]
+    fn run_launch_command_in_dir_returns_engine_exit_code_for_explicit_role() {
+        let temp = TestDir::new("launch-explicit-engine-exit");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Explicit prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_launch_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Codex,
+            None,
+            |engine, prompt, cwd| {
+                captured_engine = Some(engine);
+                captured_prompt = prompt.to_string();
+                assert_eq!(cwd, temp.path());
+                Ok(5)
+            },
+        );
+
+        assert_eq!(exit_code, 5);
+        assert_eq!(captured_engine, Some(Engine::Codex));
+        assert_eq!(captured_prompt, "# Explicit prompt\n\nDo role work.");
+    }
+
+    #[test]
     fn prepare_launch_prompt_fails_when_implicit_launch_has_no_roles() {
         let temp = TestDir::new("launch-implicit-no-roles");
         let prompts_dir = temp.path().join("prompts");
@@ -519,6 +626,60 @@ mod tests {
             fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
                 .expect("runtime prompt should be written");
         assert_eq!(runtime_prompt, prompt);
+    }
+
+    #[test]
+    fn prepare_launch_prompt_auto_selects_single_juliet_role() {
+        let temp = TestDir::new("launch-implicit-juliet-role");
+        let role_name = "juliet";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Juliet role prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let prompt = prepare_launch_prompt(temp.path(), None)
+            .expect("single juliet role should be selected implicitly");
+        assert_eq!(prompt, "# Juliet role prompt\n\nDo role work.");
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, prompt);
+    }
+
+    #[test]
+    fn run_launch_command_in_dir_returns_engine_exit_code_for_implicit_single_role_launch() {
+        let temp = TestDir::new("launch-implicit-engine-exit");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
+            .expect("prompts directory should be created");
+        fs::write(&prompt_path, "# Implicit prompt\n\nDo role work.")
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_launch_command_in_dir(
+            temp.path(),
+            None,
+            Engine::Claude,
+            None,
+            |engine, prompt, cwd| {
+                captured_engine = Some(engine);
+                captured_prompt = prompt.to_string();
+                assert_eq!(cwd, temp.path());
+                Ok(5)
+            },
+        );
+
+        assert_eq!(exit_code, 5);
+        assert_eq!(captured_engine, Some(Engine::Claude));
+        assert_eq!(captured_prompt, "# Implicit prompt\n\nDo role work.");
     }
 
     #[test]
@@ -650,5 +811,16 @@ mod tests {
         assert!(prompt_contents.contains("# program-manager"));
         assert!(prompt_contents.contains(OPERATOR_PLACEHOLDER));
         assert!(prompt_contents.contains("## Embedded seed"));
+    }
+
+    #[test]
+    fn build_launch_prompt_appends_operator_input() {
+        let base = "# Role prompt\n\nDo role work.";
+        assert_eq!(build_launch_prompt(base, None), base.to_string());
+        assert_eq!(
+            build_launch_prompt(base, Some("please continue from yesterday")),
+            "# Role prompt\n\nDo role work.\n\nUser input:\nplease continue from yesterday"
+                .to_string()
+        );
     }
 }
