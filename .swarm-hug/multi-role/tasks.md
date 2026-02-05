@@ -28,3 +28,6 @@
 
 ## Follow-up tasks (from sprint review)
 - [ ] (#12) Restore launch-time user input passthrough (removed in the CLI refactor) so explicit and implicit role runs append operator input to the prompt before invoking the engine (blocked by #6, #7)
+
+## Follow-up tasks (from sprint review)
+- [ ] (#13) Validate `juliet --role <name> <claude|codex>` with the existing role-name rules before building paths so invalid or traversal inputs (for example `../...`) are rejected with the invalid-name error instead of reading/writing outside `.juliet/<role>/`.
