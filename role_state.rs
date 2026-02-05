@@ -39,6 +39,10 @@ pub fn role_state_exists(project_root: &Path, role_name: &str) -> bool {
     role_state_dir(project_root, role_name).is_dir()
 }
 
+pub fn role_state_is_scaffolded(project_root: &Path, role_name: &str) -> bool {
+    has_role_state_layout(&role_state_dir(project_root, role_name))
+}
+
 pub fn create_role_state(project_root: &Path, role_name: &str) -> io::Result<()> {
     let role_dir = role_state_dir(project_root, role_name);
     fs::create_dir_all(role_dir.join(ARTIFACTS_DIR))?;
@@ -247,12 +251,35 @@ mod tests {
         let role_name = "operations";
 
         assert!(!role_state_exists(temp.path(), role_name));
+        assert!(!role_state_is_scaffolded(temp.path(), role_name));
 
         let state_root = temp.path().join(JULIET_STATE_DIR);
         fs::create_dir_all(&state_root).expect("state root should exist");
         fs::write(state_root.join(role_name), "not a directory").expect("write placeholder file");
 
         assert!(!role_state_exists(temp.path(), role_name));
+        assert!(!role_state_is_scaffolded(temp.path(), role_name));
+    }
+
+    #[test]
+    fn role_state_is_scaffolded_requires_full_layout() {
+        let temp = TestDir::new("scaffolded-layout");
+        let role_name = "artifacts";
+        let role_dir = role_state_dir(temp.path(), role_name);
+
+        fs::create_dir_all(&role_dir).expect("legacy role directory should be created");
+        assert!(role_state_exists(temp.path(), role_name));
+        assert!(
+            !role_state_is_scaffolded(temp.path(), role_name),
+            "role directory without state files should not count as scaffolded"
+        );
+
+        create_role_state(temp.path(), role_name).expect("missing role state should be scaffolded");
+        assert!(role_state_exists(temp.path(), role_name));
+        assert!(
+            role_state_is_scaffolded(temp.path(), role_name),
+            "role state should be scaffolded once required files and artifacts directory exist"
+        );
     }
 
     #[test]
