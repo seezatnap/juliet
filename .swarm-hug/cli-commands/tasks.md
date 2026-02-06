@@ -10,17 +10,17 @@
 
 ## Clear History Command
 
-- [A] (#3) Implement `juliet clear-history --role <name>` command execution: validate role name, verify `.juliet/<name>/` exists (same not-initialized error), empty `session.md`, `needs-from-operator.md`, `projects.md`, and `processes.md`, delete `.juliet/<name>/juliet-prompt.md` if present, clear all contents under `.juliet/<name>/artifacts/` while preserving the directory, keep `.juliet/<name>/prompt.md` unchanged, and print `history cleared for role '<name>'` [5 pts] (blocked by #1)
+- [x] (#3) Implement `juliet clear-history --role <name>` command execution: validate role name, verify `.juliet/<name>/` exists (same not-initialized error), empty `session.md`, `needs-from-operator.md`, `projects.md`, and `processes.md`, delete `.juliet/<name>/juliet-prompt.md` if present, clear all contents under `.juliet/<name>/artifacts/` while preserving the directory, keep `.juliet/<name>/prompt.md` unchanged, and print `history cleared for role '<name>'` [5 pts] (blocked by #1) (A)
 
 ## Exec Command & Engine Runtime
 
-- [B] (#4) Implement `juliet exec` single-turn flow: resolve role from explicit `--role <name>` or implicit single-role discovery using existing launch rules, stage `.juliet/<role>/prompt.md` into `.juliet/<role>/juliet-prompt.md`, and build the final prompt by reusing `build_launch_prompt` behavior to append `\n\nUser input:\n<message>` [5 pts] (blocked by #1)
+- [x] (#4) Implement `juliet exec` single-turn flow: resolve role from explicit `--role <name>` or implicit single-role discovery using existing launch rules, stage `.juliet/<role>/prompt.md` into `.juliet/<role>/juliet-prompt.md`, and build the final prompt by reusing `build_launch_prompt` behavior to append `\n\nUser input:\n<message>` [5 pts] (blocked by #1) (B)
 - [ ] (#5) Add non-interactive engine execution for exec and wire exit-code propagation: implement `run_claude_print(prompt, cwd)` to call `claude --dangerously-skip-permissions -p <prompt>` with `IS_SANDBOX=1`, implement `run_codex_quiet(prompt, cwd)` to call `codex --dangerously-bypass-approvals-and-sandbox -q <prompt>`, dispatch by selected engine, and return the engine process exit code unchanged [5 pts] (blocked by #4)
 
 ## Testing
 
-- [C] (#6) Add unit tests for parser coverage of `reset-prompt` and `clear-history`: valid argument forms, missing/invalid `--role` cases, and bad role name validation paths [5 pts] (blocked by #1)
-- [B] (#7) Add unit tests for parser coverage of `exec`: explicit-role and implicit-role forms, engine parsing for `claude|codex`, `<message...>` joining behavior, and missing-arg/bad-role failures [5 pts] (blocked by #1)
+- [x] (#6) Add unit tests for parser coverage of `reset-prompt` and `clear-history`: valid argument forms, missing/invalid `--role` cases, and bad role name validation paths [5 pts] (blocked by #1) (C)
+- [x] (#7) Add unit tests for parser coverage of `exec`: explicit-role and implicit-role forms, engine parsing for `claude|codex`, `<message...>` joining behavior, and missing-arg/bad-role failures [5 pts] (blocked by #1) (B)
 - [ ] (#8) Add integration tests (existing `TestDir` pattern) for `reset-prompt` to verify `prompt.md` is overwritten with regenerated default template content and success output is correct [5 pts] (blocked by #2)
 - [ ] (#9) Add integration tests (existing `TestDir` pattern) for `clear-history` to verify target state files are emptied, `juliet-prompt.md` is removed if present, artifacts are cleared but directory/prompt are preserved, and success output is correct [5 pts] (blocked by #3)
 - [ ] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5)
@@ -28,5 +28,5 @@
 ## Follow-up tasks (from sprint review)
 - [ ] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1)
 - [ ] (#12) Mark tasks #6 and #7 as complete in tasks.md — parser unit tests for `reset-prompt`, `clear-history`, and `exec` were delivered as part of #1's implementation on the feature branch (blocked by #1)
-- [x] (#13) Update tasks.md to mark #1 as complete — the sprint delivered all parsing, usage text, and stub handlers specified by #1
+- [x] (#13) Update tasks.md to mark #1 as complete — the sprint delivered all parsing, usage text, and stub handlers specified by #1 (C)
 - [ ] (#14) Update tasks.md to mark #6 and #7 as complete — comprehensive parser unit tests for `reset-prompt`, `clear-history`, and `exec` were included in the #1 implementation
