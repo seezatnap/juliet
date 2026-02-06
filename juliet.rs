@@ -322,6 +322,50 @@ fn initialize_role(
     Ok(InitOutcome::Initialized)
 }
 
+fn reset_prompt(
+    project_root: &Path,
+    role_name: &str,
+    default_prompt_seed: &str,
+) -> Result<(), String> {
+    role_name::validate_role_name(role_name)?;
+
+    if !role_state::role_state_exists(project_root, role_name) {
+        return Err(format!("Role '{role_name}' is not initialized."));
+    }
+
+    let prompt_path = role_state::role_prompt_path(project_root, role_name);
+    let content = role_prompt_template(role_name, default_prompt_seed);
+    fs::write(&prompt_path, content).map_err(|err| {
+        format!(
+            "failed to write prompt for role {role_name} at {}: {err}",
+            prompt_path.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+fn run_reset_prompt_command(role_name: &str) -> i32 {
+    let cwd = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    match reset_prompt(&cwd, role_name, DEFAULT_PROMPT_SEED) {
+        Ok(()) => {
+            println!("prompt reset to default for role '{role_name}'");
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
 fn run_init_command(role_name: &str) -> i32 {
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
@@ -453,10 +497,7 @@ fn main() {
             engine,
             operator_input,
         } => run_launch_command(role_name.as_deref(), engine, operator_input.as_deref()),
-        CliCommand::ResetPrompt { role_name } => {
-            eprintln!("reset-prompt not yet implemented for role '{role_name}'");
-            1
-        }
+        CliCommand::ResetPrompt { role_name } => run_reset_prompt_command(&role_name),
         CliCommand::ClearHistory { role_name } => {
             eprintln!("clear-history not yet implemented for role '{role_name}'");
             1
@@ -1287,6 +1328,71 @@ mod tests {
         );
     }
 
+    // reset_prompt unit tests
+
+    #[test]
+    fn reset_prompt_rejects_invalid_role_name() {
+        let temp = TestDir::new("reset-prompt-invalid-name");
+        let err = reset_prompt(temp.path(), "Invalid_Name", "seed prompt")
+            .expect_err("invalid role name should fail");
+
+        assert_eq!(
+            err,
+            "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens."
+        );
+    }
+
+    #[test]
+    fn reset_prompt_fails_when_role_not_initialized() {
+        let temp = TestDir::new("reset-prompt-not-initialized");
+        let err = reset_prompt(temp.path(), "missing-role", "seed prompt")
+            .expect_err("uninitialized role should fail");
+
+        assert_eq!(err, "Role 'missing-role' is not initialized.");
+    }
+
+    #[test]
+    fn reset_prompt_overwrites_prompt_with_default_template() {
+        let temp = TestDir::new("reset-prompt-overwrite");
+        let role_name = "director-of-engineering";
+        let seed = "## Seeded prompt content";
+
+        initialize_role(temp.path(), role_name, seed).expect("init should succeed");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::write(&prompt_path, "# Custom modified prompt\n\nUser changes here.")
+            .expect("prompt should be writable");
+
+        reset_prompt(temp.path(), role_name, seed).expect("reset_prompt should succeed");
+
+        let prompt_contents =
+            fs::read_to_string(&prompt_path).expect("prompt should be readable after reset");
+        let expected = role_prompt_template(role_name, seed);
+        assert_eq!(prompt_contents, expected);
+        assert!(prompt_contents.contains(&format!("# {role_name}")));
+        assert!(prompt_contents.contains(OPERATOR_PLACEHOLDER));
+        assert!(prompt_contents.contains(seed));
+    }
+
+    #[test]
+    fn reset_prompt_preserves_state_files() {
+        let temp = TestDir::new("reset-prompt-preserves-state");
+        let role_name = "operations";
+        let seed = "## Seed";
+
+        initialize_role(temp.path(), role_name, seed).expect("init should succeed");
+
+        let session_path = role_state::role_state_dir(temp.path(), role_name).join("session.md");
+        fs::write(&session_path, "important session data").expect("session should be writable");
+
+        reset_prompt(temp.path(), role_name, seed).expect("reset_prompt should succeed");
+
+        assert_eq!(
+            fs::read_to_string(&session_path).expect("session should still exist"),
+            "important session data"
+        );
+    }
+
     #[cfg(unix)]
     mod cli_integration_tests {
         use super::*;
@@ -1683,6 +1789,131 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
                     .expect("runtime prompt should be readable"),
                 role_prompt
+            );
+        }
+
+        // reset-prompt integration tests
+
+        #[test]
+        fn cli_reset_prompt_overwrites_prompt_with_default_template_and_prints_success() {
+            let temp = TestDir::new("integration-reset-prompt-success");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&prompt_path, "# Custom modified prompt\n\nUser edits here.")
+                .expect("prompt should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                format!("prompt reset to default for role '{role_name}'\n")
+            );
+            assert_eq!(output.stderr, "");
+
+            let prompt_contents = fs::read_to_string(&prompt_path)
+                .expect("prompt should be readable after reset");
+            assert!(
+                prompt_contents.contains(&format!("# {role_name}")),
+                "prompt should contain role heading"
+            );
+            assert!(
+                prompt_contents.contains(OPERATOR_PLACEHOLDER),
+                "prompt should contain operator placeholder"
+            );
+            assert!(
+                prompt_contents.contains("## Default Prompt Seed"),
+                "prompt should contain default prompt seed heading"
+            );
+            assert!(
+                prompt_contents.contains(DEFAULT_PROMPT_SEED),
+                "prompt should contain the default prompt seed content"
+            );
+        }
+
+        #[test]
+        fn cli_reset_prompt_fails_when_role_not_initialized() {
+            let temp = TestDir::new("integration-reset-prompt-not-initialized");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", "missing-role"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Role 'missing-role' is not initialized.\n"
+            );
+        }
+
+        #[test]
+        fn cli_reset_prompt_fails_with_invalid_role_name() {
+            let temp = TestDir::new("integration-reset-prompt-invalid-name");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", "Invalid_Name"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens.\n"
+            );
+        }
+
+        #[test]
+        fn cli_reset_prompt_without_role_prints_usage_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-reset-prompt-usage");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["reset-prompt"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, format!("{RESET_PROMPT_USAGE}\n"));
+            assert_eq!(output.stderr, "");
+        }
+
+        #[test]
+        fn cli_reset_prompt_preserves_state_files() {
+            let temp = TestDir::new("integration-reset-prompt-preserves-state");
+            let project_root = create_project_root(&temp);
+            let role_name = "operations";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let session_path =
+                role_state::role_state_dir(&project_root, role_name).join("session.md");
+            fs::write(&session_path, "important session data")
+                .expect("session should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                fs::read_to_string(&session_path).expect("session should still exist"),
+                "important session data"
             );
         }
     }
