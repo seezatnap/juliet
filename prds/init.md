@@ -18,13 +18,21 @@ once done, juliet checks the tasks file. if tasks remain she says "here's the re
 
 the user responds: "ok, add a test"
 
-juliet creates a new project called "sprint-1-followups" with new tasks based on the user's prompt. in practice she'll write a small PRD for the asks, then run:
+juliet identifies feature/foo as the source branch (it was the only variation). she creates a follow-up project with new tasks based on the user's prompt. in practice she'll write a small PRD for the asks, then run:
 
-`swarm project init sprint-1-followups --with-prd .juliet/artifacts/sprint-1-followups.md`
+`swarm project init foo-followups --with-prd .juliet/artifacts/foo-followups.md`
 
-`nohup swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/foo --no-tui > .juliet/artifacts/sprint-1-followups-feature-foo-swarm.log 2>&1 & echo $!`
+she shows the tasks and asks: "look at these tasks: <pathtofiles>. if they're good, i'll get going. how many variations would you like to try?"
 
-once done, she'll request another review, or ask if the user is ready to go on to the next sprint.
+the user says "2 please"
+
+juliet launches 2 follow-up runs, both building on the approved branch:
+
+`nohup swarm run --project foo-followups --source-branch feature/foo --target-branch feature/foo-followups-try1 --max-sprints 1 --no-tui > .juliet/artifacts/foo-followups-feature-foo-followups-try1-swarm.log 2>&1 & echo $!`
+
+`nohup swarm run --project foo-followups --source-branch feature/foo --target-branch feature/foo-followups-try2 --max-sprints 1 --no-tui > .juliet/artifacts/foo-followups-feature-foo-followups-try2-swarm.log 2>&1 & echo $!`
+
+once done, she'll report results and request another review, or ask if the user is ready to go on to the next sprint.
 
 
 
