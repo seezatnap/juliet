@@ -71,4 +71,14 @@ Commands:
 
   Launch (auto-selects role when only one exists):
     juliet <claude|codex>
+
+  Reset a role's prompt to default:
+    juliet reset-prompt --role <name>
+
+  Clear a role's history:
+    juliet clear-history --role <name>
+
+  Execute a single non-interactive turn:
+    juliet exec --role <name> <claude|codex> <message...>
+    juliet exec <claude|codex> <message...>
 ```
