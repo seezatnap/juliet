@@ -26,7 +26,7 @@
 - [ ] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5)
 
 ## Follow-up tasks (from sprint review)
-- [A] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1)
+- [x] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1)
 - [ ] (#12) Mark tasks #6 and #7 as complete in tasks.md — parser unit tests for `reset-prompt`, `clear-history`, and `exec` were delivered as part of #1's implementation on the feature branch (blocked by #1)
 - [x] (#13) Update tasks.md to mark #1 as complete — the sprint delivered all parsing, usage text, and stub handlers specified by #1 (C)
 - [B] (#14) Update tasks.md to mark #6 and #7 as complete — comprehensive parser unit tests for `reset-prompt`, `clear-history`, and `exec` were included in the #1 implementation
