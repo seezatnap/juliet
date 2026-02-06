@@ -36,3 +36,7 @@
 - [x] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint (C)
 - [x] (#17) Mark tasks #11, #12, and #14 as complete in tasks.md — the tasks they describe (marking #1, #6, #7 complete) are already done (C)
 - [ ] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5)
+
+## Follow-up tasks (from sprint review)
+- [ ] (#19) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; the merge at commit `1c7eb42` appears to have reverted Betty's fix
+- [ ] (#20) Fix task #15 marker in tasks.md — it shows `[B]` (agent assignment) instead of `[x]`; Betty completed the task but the marker was not updated to complete
