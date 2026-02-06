@@ -37,9 +37,12 @@ Once you're done, just ask Juliet to merge for you, and ask her to clean up the 
 Juliet is built to be unobstructive, thus needs to be run without confirmations (i.e., it is inherently dangerous to run outside of a sandbox). You should run it in a docker container, or a cloud machine. I use Digital Ocean droplets myself.
 
 ```
-brew install swarm // fix command
+brew tap seezatnap/seezatnap
+brew install swarm
 brew install juliet
 ```
+
+`swarm` is installed automatically as a dependency of `juliet`, so `brew install juliet` is all you need. The tap step is only required the first time.
 
 ## Commands
 
