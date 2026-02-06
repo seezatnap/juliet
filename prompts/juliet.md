@@ -84,8 +84,12 @@ Before choosing any action, rebuild intent from `.juliet` state in this priority
 6. Locate the tasks file path created by `swarm project init` (prefer the path printed by the command, otherwise use `.swarm-hug/<project>/tasks.md`).
 7. Validate `tasks.md`. If it is still scaffold/placeholder content, regenerate concrete tasks from the PRD before asking for review.
 8. Locate the specs file path for that project (prefer `.swarm-hug/<project>/specs.md`; if missing, note it as unknown and create only when needed).
-9. Add a needs entry requesting task review and variation count. Then respond with the exact phrase, substituting `<pathtofiles>` with the real path: `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
-10. Do not run `swarm run` yet; wait for operator input to tell you how many variations to run or to request task/spec edits.
+9. Commit the `.swarm-hug` artifacts for the new project:
+   - Run `git diff` and `git status` to review what changed and ensure only the expected `.swarm-hug/<project>/` files are being committed.
+   - Stage the artifacts: `git add .swarm-hug/<project>/`
+   - Commit with: `git commit --author="Juliet <RoleName> <>" -m "init <project> swarm artifacts"` where `<RoleName>` is the role identity from the heading of this prompt.
+10. Add a needs entry requesting task review and variation count. Then respond with the exact phrase, substituting `<pathtofiles>` with the real path: `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
+11. Do not run `swarm run` yet; wait for operator input to tell you how many variations to run or to request task/spec edits.
 
 ### C. Pending needs in `needs-from-operator.md` + no operator input -> Ask the oldest need
 
@@ -127,6 +131,7 @@ Ask the oldest item in `.juliet/needs-from-operator.md` plainly (verbatim) and e
        - If the sprint had only one target branch, use that branch automatically.
        - If the sprint had multiple target branches and the user did not specify which one, ask which branch to build on before proceeding.
     b. **Create the follow-up project.** Write `.juliet/artifacts/<project>-followups.md` focused on the requested changes. Run `swarm project init <project>-followups --with-prd .juliet/artifacts/<project>-followups.md <engine-arg>`.
+    b2. **Commit the `.swarm-hug` artifacts** for the follow-up project (same as B.9): check `git diff`/`git status`, stage `.swarm-hug/<project>-followups/`, and commit with `git commit --author="Juliet <RoleName> <>" -m "init <project>-followups swarm artifacts"`.
     c. **Validate tasks** (same as B.7). Then add a needs entry and ask: `look at these tasks: <pathtofiles>. if they're good, i'll get going. how many varations  would you like to try?`
     d. **When the user approves tasks and provides variation count `N`**, apply the same engine-choice rule as step 6. Launch `N` runs, each with `--source-branch <source-branch>`:
        - If `N` is 1: `--target-branch feature/<project>-followups`
