@@ -1,6 +1,10 @@
 # Juliet
 
-Juliet is a simple bootup script for Claude Code or Codex. By default, it's built to be an expert at using Swarm Hug, another library I wrote which manages swarms of agents in a sprint-like configuration. But you can tweak the prompt to make it an expert at anything else.
+![juliet copy 3](https://github.com/user-attachments/assets/20f6f122-449a-4a39-809a-cb8e2e9076c7)
+
+Juliet is a simple bootup script for Claude Code or Codex. By default, it's built to be an expert at using [Swarm Hug](https://github.com/seezatnap/swarm-hug), another library I made which manages swarms of agents in a sprint-like configuration. But you can tweak the prompt to make it an expert at anything else.
+
+You could run Juliet by copying the prompt, but the CLI sets up several things for you and helps guide consistency. Up to you!
 
 ## Initializing
 
