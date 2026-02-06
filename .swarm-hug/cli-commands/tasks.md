@@ -30,3 +30,9 @@
 - [ ] (#12) Mark tasks #6 and #7 as complete in tasks.md — parser unit tests for `reset-prompt`, `clear-history`, and `exec` were delivered as part of #1's implementation on the feature branch (blocked by #1)
 - [x] (#13) Update tasks.md to mark #1 as complete — the sprint delivered all parsing, usage text, and stub handlers specified by #1 (C)
 - [ ] (#14) Update tasks.md to mark #6 and #7 as complete — comprehensive parser unit tests for `reset-prompt`, `clear-history`, and `exec` were included in the #1 implementation
+
+## Follow-up tasks (from sprint review)
+- [ ] (#15) Fix task #2 marker in tasks.md — it shows `[A]` (agent assignment) instead of `[x]`; the reset-prompt implementation is fully complete with unit and integration tests
+- [ ] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint
+- [ ] (#17) Mark tasks #11, #12, and #14 as complete in tasks.md — the tasks they describe (marking #1, #6, #7 complete) are already done
+- [ ] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5)
