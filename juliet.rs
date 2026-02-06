@@ -515,6 +515,48 @@ fn run_launch_command(role_name: Option<&str>, engine: Engine, operator_input: O
 
     run_launch_command_in_dir(&cwd, role_name, engine, operator_input, run_engine)
 }
+
+fn run_exec_command_in_dir<F>(
+    project_root: &Path,
+    role_name: Option<&str>,
+    engine: Engine,
+    message: &str,
+    engine_runner: F,
+) -> i32
+where
+    F: FnOnce(Engine, &str, &Path) -> io::Result<i32>,
+{
+    let base_prompt = match prepare_launch_prompt(project_root, role_name) {
+        Ok(contents) => contents,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
+
+    let prompt = build_launch_prompt(&base_prompt, Some(message));
+
+    match engine_runner(engine, &prompt, project_root) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to run engine: {err}");
+            1
+        }
+    }
+}
+
+fn run_exec_command(role_name: Option<&str>, engine: Engine, message: &str) -> i32 {
+    let cwd = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    run_exec_command_in_dir(&cwd, role_name, engine, message, run_engine)
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let command = match parse_cli_command(&args) {
@@ -535,13 +577,10 @@ fn main() {
         CliCommand::ResetPrompt { role_name } => run_reset_prompt_command(&role_name),
         CliCommand::ClearHistory { role_name } => run_clear_history_command(&role_name),
         CliCommand::Exec {
-            role_name: _,
-            engine: _,
-            message: _,
-        } => {
-            eprintln!("exec not yet implemented");
-            1
-        }
+            role_name,
+            engine,
+            message,
+        } => run_exec_command(role_name.as_deref(), engine, &message),
     };
 
     std::process::exit(exit_code);
@@ -1556,6 +1595,192 @@ mod tests {
         );
     }
 
+    // exec command unit tests
+
+    #[test]
+    fn exec_explicit_role_stages_prompt_and_appends_message() {
+        let temp = TestDir::new("exec-explicit-role");
+        let role_name = "director-of-engineering";
+        let role_prompt = "# Exec prompt\n\nDo role work.";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(role_state::role_prompt_path(temp.path(), role_name), role_prompt)
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Codex,
+            "fix the bug",
+            |engine, prompt, cwd| {
+                captured_engine = Some(engine);
+                captured_prompt = prompt.to_string();
+                assert_eq!(cwd, temp.path());
+                Ok(0)
+            },
+        );
+
+        assert_eq!(exit_code, 0);
+        assert_eq!(captured_engine, Some(Engine::Codex));
+        assert_eq!(
+            captured_prompt,
+            "# Exec prompt\n\nDo role work.\n\nUser input:\nfix the bug"
+        );
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, role_prompt);
+    }
+
+    #[test]
+    fn exec_implicit_single_role_stages_prompt_and_appends_message() {
+        let temp = TestDir::new("exec-implicit-single-role");
+        let role_name = "director-of-engineering";
+        let role_prompt = "# Implicit exec prompt\n\nDo role work.";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(role_state::role_prompt_path(temp.path(), role_name), role_prompt)
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            None,
+            Engine::Claude,
+            "deploy the app",
+            |engine, prompt, cwd| {
+                captured_engine = Some(engine);
+                captured_prompt = prompt.to_string();
+                assert_eq!(cwd, temp.path());
+                Ok(0)
+            },
+        );
+
+        assert_eq!(exit_code, 0);
+        assert_eq!(captured_engine, Some(Engine::Claude));
+        assert_eq!(
+            captured_prompt,
+            "# Implicit exec prompt\n\nDo role work.\n\nUser input:\ndeploy the app"
+        );
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, role_prompt);
+    }
+
+    #[test]
+    fn exec_returns_engine_exit_code() {
+        let temp = TestDir::new("exec-engine-exit-code");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(
+            role_state::role_prompt_path(temp.path(), role_name),
+            "# prompt",
+        )
+        .expect("role prompt should be written");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Claude,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(42),
+        );
+
+        assert_eq!(exit_code, 42);
+    }
+
+    #[test]
+    fn exec_fails_when_explicit_role_is_missing() {
+        let temp = TestDir::new("exec-missing-role");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some("missing-role"),
+            Engine::Codex,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_fails_when_no_roles_configured_for_implicit_discovery() {
+        let temp = TestDir::new("exec-no-roles");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            None,
+            Engine::Claude,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_fails_when_multiple_roles_configured_for_implicit_discovery() {
+        let temp = TestDir::new("exec-multiple-roles");
+        role_state::create_role_state(temp.path(), "alpha-team")
+            .expect("alpha role state should exist");
+        role_state::create_role_state(temp.path(), "zeta-team")
+            .expect("zeta role state should exist");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            None,
+            Engine::Codex,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_fails_when_engine_runner_returns_error() {
+        let temp = TestDir::new("exec-engine-error");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(
+            role_state::role_prompt_path(temp.path(), role_name),
+            "# prompt",
+        )
+        .expect("role prompt should be written");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Claude,
+            "hello",
+            |_engine, _prompt, _cwd| {
+                Err(io::Error::new(io::ErrorKind::NotFound, "engine not found"))
+            },
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_rejects_invalid_explicit_role_name() {
+        let temp = TestDir::new("exec-invalid-role-name");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some("../escaped-role"),
+            Engine::Codex,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
     #[cfg(unix)]
     mod cli_integration_tests {
         use super::*;
@@ -2269,6 +2494,159 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 format!("history cleared for role '{role_name}'\n")
             );
             assert_eq!(output.stderr, "");
+        }
+
+        // exec integration tests
+
+        #[test]
+        fn cli_exec_explicit_role_stages_prompt_and_appends_message() {
+            let temp = TestDir::new("integration-exec-explicit");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-marketing";
+            let role_prompt = "# Exec role prompt\n\nRun the exec workflow.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let role_prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&role_prompt_path, role_prompt).expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let output = run_cli(
+                &project_root,
+                &["exec", "--role", role_name, "codex", "fix", "the", "bug"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, "");
+
+            let expected_prompt =
+                format!("{role_prompt}\n\nUser input:\nfix the bug");
+            assert_eq!(
+                mock_codex.recorded_args(),
+                vec![
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                    expected_prompt.clone(),
+                ]
+            );
+
+            let runtime_prompt =
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable");
+            assert_eq!(runtime_prompt, role_prompt);
+        }
+
+        #[test]
+        fn cli_exec_implicit_single_role_stages_prompt_and_appends_message() {
+            let temp = TestDir::new("integration-exec-implicit");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+            let role_prompt = "# Implicit exec prompt\n\nDo exec work.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
+                .expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let output = run_cli(
+                &project_root,
+                &["exec", "codex", "deploy", "now"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, "");
+
+            let expected_prompt =
+                format!("{role_prompt}\n\nUser input:\ndeploy now");
+            assert_eq!(mock_codex.recorded_prompt(), expected_prompt);
+
+            let runtime_prompt =
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable");
+            assert_eq!(runtime_prompt, role_prompt);
+        }
+
+        #[test]
+        fn cli_exec_returns_engine_exit_code() {
+            let temp = TestDir::new("integration-exec-exit-code");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let mock_codex = MockCodex::new(temp.path(), 7);
+            let output = run_cli(
+                &project_root,
+                &["exec", "--role", role_name, "codex", "hello"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 7);
+        }
+
+        #[test]
+        fn cli_exec_with_missing_role_prints_error_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-exec-missing-role");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["exec", "--role", "missing-role", "codex", "hello"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Role not found: missing-role. Run: juliet init --role missing-role\n"
+            );
+        }
+
+        #[test]
+        fn cli_exec_implicit_with_no_roles_prints_error_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-exec-no-roles");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["exec", "codex", "hello"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, format!("{NO_ROLES_CONFIGURED_ERROR}\n"));
+        }
+
+        #[test]
+        fn cli_exec_implicit_with_multiple_roles_prints_error_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-exec-multi-roles");
+            let project_root = create_project_root(&temp);
+
+            let init1 = run_cli(&project_root, &["init", "--role", "alpha-team"], None);
+            assert_eq!(init1.exit_code, 0);
+            let init2 = run_cli(&project_root, &["init", "--role", "zeta-team"], None);
+            assert_eq!(init2.exit_code, 0);
+
+            let output = run_cli(
+                &project_root,
+                &["exec", "codex", "hello"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team\n"
+            );
         }
     }
 }
