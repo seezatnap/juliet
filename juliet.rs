@@ -322,6 +322,85 @@ fn initialize_role(
     Ok(InitOutcome::Initialized)
 }
 
+fn reset_prompt(
+    project_root: &Path,
+    role_name: &str,
+    default_prompt_seed: &str,
+) -> Result<(), String> {
+    role_name::validate_role_name(role_name)?;
+
+    if !role_state::role_state_exists(project_root, role_name) {
+        return Err(format!("Role '{role_name}' is not initialized."));
+    }
+
+    let prompt_path = role_state::role_prompt_path(project_root, role_name);
+    let content = role_prompt_template(role_name, default_prompt_seed);
+    fs::write(&prompt_path, content).map_err(|err| {
+        format!(
+            "failed to write prompt for role {role_name} at {}: {err}",
+            prompt_path.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+fn clear_history(project_root: &Path, role_name: &str) -> Result<(), String> {
+    role_name::validate_role_name(role_name)?;
+
+    if !role_state::role_state_exists(project_root, role_name) {
+        return Err(format!("Role '{role_name}' is not initialized."));
+    }
+
+    role_state::clear_role_history(project_root, role_name).map_err(|err| {
+        format!("failed to clear history for role {role_name}: {err}")
+    })?;
+
+    Ok(())
+}
+
+fn run_clear_history_command(role_name: &str) -> i32 {
+    let cwd = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    match clear_history(&cwd, role_name) {
+        Ok(()) => {
+            println!("history cleared for role '{role_name}'");
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
+fn run_reset_prompt_command(role_name: &str) -> i32 {
+    let cwd = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    match reset_prompt(&cwd, role_name, DEFAULT_PROMPT_SEED) {
+        Ok(()) => {
+            println!("prompt reset to default for role '{role_name}'");
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
 fn run_init_command(role_name: &str) -> i32 {
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
@@ -436,6 +515,48 @@ fn run_launch_command(role_name: Option<&str>, engine: Engine, operator_input: O
 
     run_launch_command_in_dir(&cwd, role_name, engine, operator_input, run_engine)
 }
+
+fn run_exec_command_in_dir<F>(
+    project_root: &Path,
+    role_name: Option<&str>,
+    engine: Engine,
+    message: &str,
+    engine_runner: F,
+) -> i32
+where
+    F: FnOnce(Engine, &str, &Path) -> io::Result<i32>,
+{
+    let base_prompt = match prepare_launch_prompt(project_root, role_name) {
+        Ok(contents) => contents,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
+
+    let prompt = build_launch_prompt(&base_prompt, Some(message));
+
+    match engine_runner(engine, &prompt, project_root) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to run engine: {err}");
+            1
+        }
+    }
+}
+
+fn run_exec_command(role_name: Option<&str>, engine: Engine, message: &str) -> i32 {
+    let cwd = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    run_exec_command_in_dir(&cwd, role_name, engine, message, run_engine)
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let command = match parse_cli_command(&args) {
@@ -453,22 +574,13 @@ fn main() {
             engine,
             operator_input,
         } => run_launch_command(role_name.as_deref(), engine, operator_input.as_deref()),
-        CliCommand::ResetPrompt { role_name } => {
-            eprintln!("reset-prompt not yet implemented for role '{role_name}'");
-            1
-        }
-        CliCommand::ClearHistory { role_name } => {
-            eprintln!("clear-history not yet implemented for role '{role_name}'");
-            1
-        }
+        CliCommand::ResetPrompt { role_name } => run_reset_prompt_command(&role_name),
+        CliCommand::ClearHistory { role_name } => run_clear_history_command(&role_name),
         CliCommand::Exec {
-            role_name: _,
-            engine: _,
-            message: _,
-        } => {
-            eprintln!("exec not yet implemented");
-            1
-        }
+            role_name,
+            engine,
+            message,
+        } => run_exec_command(role_name.as_deref(), engine, &message),
     };
 
     std::process::exit(exit_code);
@@ -620,6 +732,61 @@ mod tests {
         assert_eq!(error, CliError::ResetPromptUsage);
     }
 
+    #[test]
+    fn parses_reset_prompt_with_simple_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["reset-prompt", "--role", "ops"])),
+            Ok(CliCommand::ResetPrompt {
+                role_name: "ops".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_reset_prompt_with_numeric_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["reset-prompt", "--role", "agent-007"])),
+            Ok(CliCommand::ResetPrompt {
+                role_name: "agent-007".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn reset_prompt_parser_passes_through_invalid_role_names() {
+        // The parser does not validate role names; validation is deferred to execution.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let result = parse_cli_command(&to_args(&["reset-prompt", "--role", bad_name]));
+            assert_eq!(
+                result,
+                Ok(CliCommand::ResetPrompt {
+                    role_name: bad_name.to_string()
+                }),
+                "parser should accept any string as role_name without validation: {bad_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn reset_prompt_bad_role_name_rejected_by_validation() {
+        // Role name validation rejects names that the parser passes through.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let err = role_name::validate_role_name(bad_name)
+                .expect_err(&format!("role name '{bad_name}' should be rejected"));
+            assert!(
+                err.contains("Invalid role name"),
+                "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn reset_prompt_usage_error_when_role_flag_not_second_arg() {
+        let error =
+            parse_cli_command(&to_args(&["reset-prompt", "my-role", "--role"])).unwrap_err();
+        assert_eq!(error, CliError::ResetPromptUsage);
+    }
+
     // clear-history parsing tests
 
     #[test]
@@ -657,6 +824,61 @@ mod tests {
     fn clear_history_usage_error_when_wrong_flag() {
         let error =
             parse_cli_command(&to_args(&["clear-history", "--name", "my-role"])).unwrap_err();
+        assert_eq!(error, CliError::ClearHistoryUsage);
+    }
+
+    #[test]
+    fn parses_clear_history_with_simple_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["clear-history", "--role", "qa"])),
+            Ok(CliCommand::ClearHistory {
+                role_name: "qa".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_clear_history_with_numeric_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["clear-history", "--role", "team-42"])),
+            Ok(CliCommand::ClearHistory {
+                role_name: "team-42".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn clear_history_parser_passes_through_invalid_role_names() {
+        // The parser does not validate role names; validation is deferred to execution.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let result = parse_cli_command(&to_args(&["clear-history", "--role", bad_name]));
+            assert_eq!(
+                result,
+                Ok(CliCommand::ClearHistory {
+                    role_name: bad_name.to_string()
+                }),
+                "parser should accept any string as role_name without validation: {bad_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn clear_history_bad_role_name_rejected_by_validation() {
+        // Role name validation rejects names that the parser passes through.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let err = role_name::validate_role_name(bad_name)
+                .expect_err(&format!("role name '{bad_name}' should be rejected"));
+            assert!(
+                err.contains("Invalid role name"),
+                "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn clear_history_usage_error_when_role_flag_not_second_arg() {
+        let error =
+            parse_cli_command(&to_args(&["clear-history", "my-role", "--role"])).unwrap_err();
         assert_eq!(error, CliError::ClearHistoryUsage);
     }
 
@@ -789,6 +1011,110 @@ mod tests {
         let error =
             parse_cli_command(&to_args(&["exec", "--role", "my-role", "invalid", "hello"]))
                 .unwrap_err();
+        assert_eq!(error, CliError::ExecUsage);
+    }
+
+    #[test]
+    fn exec_explicit_role_joins_remaining_args_into_message() {
+        assert_eq!(
+            parse_cli_command(&to_args(&[
+                "exec", "--role", "my-role", "claude", "please", "fix", "all", "the", "bugs"
+            ])),
+            Ok(CliCommand::Exec {
+                role_name: Some("my-role".to_string()),
+                engine: Engine::Claude,
+                message: "please fix all the bugs".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn exec_parser_passes_through_invalid_role_names() {
+        // The parser does not validate role names; validation is deferred to execution.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let result = parse_cli_command(&to_args(&[
+                "exec", "--role", bad_name, "claude", "hello",
+            ]));
+            assert_eq!(
+                result,
+                Ok(CliCommand::Exec {
+                    role_name: Some(bad_name.to_string()),
+                    engine: Engine::Claude,
+                    message: "hello".to_string(),
+                }),
+                "parser should accept any string as role_name without validation: {bad_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn exec_bad_role_name_rejected_by_validation() {
+        // Role name validation rejects names that the parser passes through.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let err = role_name::validate_role_name(bad_name)
+                .expect_err(&format!("role name '{bad_name}' should be rejected"));
+            assert!(
+                err.contains("Invalid role name"),
+                "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn exec_engine_parsing_is_case_sensitive() {
+        // Only lowercase "claude" and "codex" are valid engines.
+        for invalid_engine in ["Claude", "CLAUDE", "Codex", "CODEX", "Claude3", "gpt4"] {
+            let error_implicit =
+                parse_cli_command(&to_args(&["exec", invalid_engine, "hello"])).unwrap_err();
+            assert_eq!(
+                error_implicit, CliError::ExecUsage,
+                "implicit form should reject engine '{invalid_engine}'"
+            );
+
+            let error_explicit = parse_cli_command(&to_args(&[
+                "exec",
+                "--role",
+                "my-role",
+                invalid_engine,
+                "hello",
+            ]))
+            .unwrap_err();
+            assert_eq!(
+                error_explicit, CliError::ExecUsage,
+                "explicit form should reject engine '{invalid_engine}'"
+            );
+        }
+    }
+
+    #[test]
+    fn exec_usage_error_message_matches_exec_usage_constant() {
+        let error = parse_cli_command(&to_args(&["exec"])).unwrap_err();
+        assert_eq!(error.message(), EXEC_USAGE);
+
+        let error = parse_cli_command(&to_args(&["exec", "claude"])).unwrap_err();
+        assert_eq!(error.message(), EXEC_USAGE);
+
+        let error =
+            parse_cli_command(&to_args(&["exec", "--role", "my-role"])).unwrap_err();
+        assert_eq!(error.message(), EXEC_USAGE);
+    }
+
+    #[test]
+    fn exec_message_preserves_whitespace_between_args() {
+        // Each arg is joined by a single space; internal whitespace within args is preserved.
+        assert_eq!(
+            parse_cli_command(&to_args(&["exec", "codex", "word1", "word2", "word3"])),
+            Ok(CliCommand::Exec {
+                role_name: None,
+                engine: Engine::Codex,
+                message: "word1 word2 word3".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn exec_usage_error_when_role_flag_present_but_missing_role_name_and_engine() {
+        let error = parse_cli_command(&to_args(&["exec", "--role"])).unwrap_err();
         assert_eq!(error, CliError::ExecUsage);
     }
 
@@ -1175,6 +1501,388 @@ mod tests {
             "# Role prompt\n\nDo role work.\n\nUser input:\nplease continue from yesterday"
                 .to_string()
         );
+    }
+
+    // reset_prompt unit tests
+
+    #[test]
+    fn reset_prompt_rejects_invalid_role_name() {
+        let temp = TestDir::new("reset-prompt-invalid-name");
+        let err = reset_prompt(temp.path(), "Invalid_Name", "seed prompt")
+            .expect_err("invalid role name should fail");
+
+        assert_eq!(
+            err,
+            "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens."
+        );
+    }
+
+    #[test]
+    fn reset_prompt_fails_when_role_not_initialized() {
+        let temp = TestDir::new("reset-prompt-not-initialized");
+        let err = reset_prompt(temp.path(), "missing-role", "seed prompt")
+            .expect_err("uninitialized role should fail");
+
+        assert_eq!(err, "Role 'missing-role' is not initialized.");
+    }
+
+    #[test]
+    fn reset_prompt_overwrites_prompt_with_default_template() {
+        let temp = TestDir::new("reset-prompt-overwrite");
+        let role_name = "director-of-engineering";
+        let seed = "## Seeded prompt content";
+
+        initialize_role(temp.path(), role_name, seed).expect("init should succeed");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::write(&prompt_path, "# Custom modified prompt\n\nUser changes here.")
+            .expect("prompt should be writable");
+
+        reset_prompt(temp.path(), role_name, seed).expect("reset_prompt should succeed");
+
+        let prompt_contents =
+            fs::read_to_string(&prompt_path).expect("prompt should be readable after reset");
+        let expected = role_prompt_template(role_name, seed);
+        assert_eq!(prompt_contents, expected);
+        assert!(prompt_contents.contains(&format!("# {role_name}")));
+        assert!(prompt_contents.contains(OPERATOR_PLACEHOLDER));
+        assert!(prompt_contents.contains(seed));
+    }
+
+    #[test]
+    fn reset_prompt_preserves_state_files() {
+        let temp = TestDir::new("reset-prompt-preserves-state");
+        let role_name = "operations";
+        let seed = "## Seed";
+
+        initialize_role(temp.path(), role_name, seed).expect("init should succeed");
+
+        let session_path = role_state::role_state_dir(temp.path(), role_name).join("session.md");
+        fs::write(&session_path, "important session data").expect("session should be writable");
+
+        reset_prompt(temp.path(), role_name, seed).expect("reset_prompt should succeed");
+
+        assert_eq!(
+            fs::read_to_string(&session_path).expect("session should still exist"),
+            "important session data"
+        );
+    }
+
+    // clear_history unit tests
+
+    #[test]
+    fn clear_history_rejects_invalid_role_name() {
+        let temp = TestDir::new("clear-history-invalid-name");
+        let err = clear_history(temp.path(), "Invalid_Name")
+            .expect_err("invalid role name should fail");
+
+        assert_eq!(
+            err,
+            "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens."
+        );
+    }
+
+    #[test]
+    fn clear_history_fails_when_role_not_initialized() {
+        let temp = TestDir::new("clear-history-not-initialized");
+        let err = clear_history(temp.path(), "missing-role")
+            .expect_err("uninitialized role should fail");
+
+        assert_eq!(err, "Role 'missing-role' is not initialized.");
+    }
+
+    #[test]
+    fn clear_history_empties_state_files() {
+        let temp = TestDir::new("clear-history-empties-state");
+        let role_name = "director-of-engineering";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let role_dir = role_state::role_state_dir(temp.path(), role_name);
+        fs::write(role_dir.join("session.md"), "session data").expect("write session");
+        fs::write(
+            role_dir.join("needs-from-operator.md"),
+            "operator needs",
+        )
+        .expect("write needs");
+        fs::write(role_dir.join("projects.md"), "project data").expect("write projects");
+        fs::write(role_dir.join("processes.md"), "process data").expect("write processes");
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert_eq!(
+            fs::read_to_string(role_dir.join("session.md")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(role_dir.join("needs-from-operator.md")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(role_dir.join("projects.md")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(role_dir.join("processes.md")).unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn clear_history_deletes_juliet_prompt_md() {
+        let temp = TestDir::new("clear-history-deletes-runtime-prompt");
+        let role_name = "operations";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let runtime_path = role_state::runtime_prompt_path(temp.path(), role_name);
+        fs::write(&runtime_path, "runtime prompt content").expect("write runtime prompt");
+        assert!(runtime_path.exists());
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert!(!runtime_path.exists(), "juliet-prompt.md should be deleted");
+    }
+
+    #[test]
+    fn clear_history_succeeds_when_juliet_prompt_md_absent() {
+        let temp = TestDir::new("clear-history-no-runtime-prompt");
+        let role_name = "qa";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let runtime_path = role_state::runtime_prompt_path(temp.path(), role_name);
+        assert!(!runtime_path.exists());
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed without runtime prompt");
+    }
+
+    #[test]
+    fn clear_history_clears_artifacts_directory_contents() {
+        let temp = TestDir::new("clear-history-clears-artifacts");
+        let role_name = "engineering";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let artifacts_dir = role_state::role_state_dir(temp.path(), role_name).join("artifacts");
+        fs::write(artifacts_dir.join("report.txt"), "report content").expect("write artifact file");
+        fs::create_dir_all(artifacts_dir.join("subdir")).expect("create artifact subdir");
+        fs::write(artifacts_dir.join("subdir").join("nested.md"), "nested content")
+            .expect("write nested artifact");
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert!(artifacts_dir.is_dir(), "artifacts directory should be preserved");
+        assert_eq!(
+            fs::read_dir(&artifacts_dir).unwrap().count(),
+            0,
+            "artifacts directory should be empty"
+        );
+    }
+
+    #[test]
+    fn clear_history_preserves_prompt_md() {
+        let temp = TestDir::new("clear-history-preserves-prompt");
+        let role_name = "director-of-marketing";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::write(&prompt_path, "# Custom prompt\n\nKeep this intact.")
+            .expect("write custom prompt");
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert_eq!(
+            fs::read_to_string(&prompt_path).unwrap(),
+            "# Custom prompt\n\nKeep this intact."
+        );
+    }
+
+    // exec command unit tests
+
+    #[test]
+    fn exec_explicit_role_stages_prompt_and_appends_message() {
+        let temp = TestDir::new("exec-explicit-role");
+        let role_name = "director-of-engineering";
+        let role_prompt = "# Exec prompt\n\nDo role work.";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(role_state::role_prompt_path(temp.path(), role_name), role_prompt)
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Codex,
+            "fix the bug",
+            |engine, prompt, cwd| {
+                captured_engine = Some(engine);
+                captured_prompt = prompt.to_string();
+                assert_eq!(cwd, temp.path());
+                Ok(0)
+            },
+        );
+
+        assert_eq!(exit_code, 0);
+        assert_eq!(captured_engine, Some(Engine::Codex));
+        assert_eq!(
+            captured_prompt,
+            "# Exec prompt\n\nDo role work.\n\nUser input:\nfix the bug"
+        );
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, role_prompt);
+    }
+
+    #[test]
+    fn exec_implicit_single_role_stages_prompt_and_appends_message() {
+        let temp = TestDir::new("exec-implicit-single-role");
+        let role_name = "director-of-engineering";
+        let role_prompt = "# Implicit exec prompt\n\nDo role work.";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(role_state::role_prompt_path(temp.path(), role_name), role_prompt)
+            .expect("role prompt should be written");
+
+        let mut captured_engine = None;
+        let mut captured_prompt = String::new();
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            None,
+            Engine::Claude,
+            "deploy the app",
+            |engine, prompt, cwd| {
+                captured_engine = Some(engine);
+                captured_prompt = prompt.to_string();
+                assert_eq!(cwd, temp.path());
+                Ok(0)
+            },
+        );
+
+        assert_eq!(exit_code, 0);
+        assert_eq!(captured_engine, Some(Engine::Claude));
+        assert_eq!(
+            captured_prompt,
+            "# Implicit exec prompt\n\nDo role work.\n\nUser input:\ndeploy the app"
+        );
+
+        let runtime_prompt =
+            fs::read_to_string(role_state::runtime_prompt_path(temp.path(), role_name))
+                .expect("runtime prompt should be written");
+        assert_eq!(runtime_prompt, role_prompt);
+    }
+
+    #[test]
+    fn exec_returns_engine_exit_code() {
+        let temp = TestDir::new("exec-engine-exit-code");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(
+            role_state::role_prompt_path(temp.path(), role_name),
+            "# prompt",
+        )
+        .expect("role prompt should be written");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Claude,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(42),
+        );
+
+        assert_eq!(exit_code, 42);
+    }
+
+    #[test]
+    fn exec_fails_when_explicit_role_is_missing() {
+        let temp = TestDir::new("exec-missing-role");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some("missing-role"),
+            Engine::Codex,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_fails_when_no_roles_configured_for_implicit_discovery() {
+        let temp = TestDir::new("exec-no-roles");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            None,
+            Engine::Claude,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_fails_when_multiple_roles_configured_for_implicit_discovery() {
+        let temp = TestDir::new("exec-multiple-roles");
+        role_state::create_role_state(temp.path(), "alpha-team")
+            .expect("alpha role state should exist");
+        role_state::create_role_state(temp.path(), "zeta-team")
+            .expect("zeta role state should exist");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            None,
+            Engine::Codex,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_fails_when_engine_runner_returns_error() {
+        let temp = TestDir::new("exec-engine-error");
+        let role_name = "director-of-engineering";
+        role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
+        fs::write(
+            role_state::role_prompt_path(temp.path(), role_name),
+            "# prompt",
+        )
+        .expect("role prompt should be written");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some(role_name),
+            Engine::Claude,
+            "hello",
+            |_engine, _prompt, _cwd| {
+                Err(io::Error::new(io::ErrorKind::NotFound, "engine not found"))
+            },
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn exec_rejects_invalid_explicit_role_name() {
+        let temp = TestDir::new("exec-invalid-role-name");
+
+        let exit_code = run_exec_command_in_dir(
+            temp.path(),
+            Some("../escaped-role"),
+            Engine::Codex,
+            "hello",
+            |_engine, _prompt, _cwd| Ok(0),
+        );
+
+        assert_eq!(exit_code, 1);
     }
 
     #[cfg(unix)]
@@ -1573,6 +2281,475 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
                     .expect("runtime prompt should be readable"),
                 role_prompt
+            );
+        }
+
+        // reset-prompt integration tests
+
+        #[test]
+        fn cli_reset_prompt_overwrites_prompt_with_default_template_and_prints_success() {
+            let temp = TestDir::new("integration-reset-prompt-success");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&prompt_path, "# Custom modified prompt\n\nUser edits here.")
+                .expect("prompt should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                format!("prompt reset to default for role '{role_name}'\n")
+            );
+            assert_eq!(output.stderr, "");
+
+            let prompt_contents = fs::read_to_string(&prompt_path)
+                .expect("prompt should be readable after reset");
+            assert!(
+                prompt_contents.contains(&format!("# {role_name}")),
+                "prompt should contain role heading"
+            );
+            assert!(
+                prompt_contents.contains(OPERATOR_PLACEHOLDER),
+                "prompt should contain operator placeholder"
+            );
+            assert!(
+                prompt_contents.contains("## Default Prompt Seed"),
+                "prompt should contain default prompt seed heading"
+            );
+            assert!(
+                prompt_contents.contains(DEFAULT_PROMPT_SEED),
+                "prompt should contain the default prompt seed content"
+            );
+        }
+
+        #[test]
+        fn cli_reset_prompt_fails_when_role_not_initialized() {
+            let temp = TestDir::new("integration-reset-prompt-not-initialized");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", "missing-role"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Role 'missing-role' is not initialized.\n"
+            );
+        }
+
+        #[test]
+        fn cli_reset_prompt_fails_with_invalid_role_name() {
+            let temp = TestDir::new("integration-reset-prompt-invalid-name");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", "Invalid_Name"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens.\n"
+            );
+        }
+
+        #[test]
+        fn cli_reset_prompt_without_role_prints_usage_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-reset-prompt-usage");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["reset-prompt"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, format!("{RESET_PROMPT_USAGE}\n"));
+            assert_eq!(output.stderr, "");
+        }
+
+        #[test]
+        fn cli_reset_prompt_preserves_state_files() {
+            let temp = TestDir::new("integration-reset-prompt-preserves-state");
+            let project_root = create_project_root(&temp);
+            let role_name = "operations";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let session_path =
+                role_state::role_state_dir(&project_root, role_name).join("session.md");
+            fs::write(&session_path, "important session data")
+                .expect("session should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                fs::read_to_string(&session_path).expect("session should still exist"),
+                "important session data"
+            );
+        }
+
+        // clear-history integration tests
+
+        #[test]
+        fn cli_clear_history_empties_state_and_prints_success() {
+            let temp = TestDir::new("integration-clear-history-success");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let role_dir = role_state::role_state_dir(&project_root, role_name);
+            fs::write(role_dir.join("session.md"), "session data")
+                .expect("session should be writable");
+            fs::write(role_dir.join("needs-from-operator.md"), "operator needs")
+                .expect("needs should be writable");
+            fs::write(role_dir.join("projects.md"), "project data")
+                .expect("projects should be writable");
+            fs::write(role_dir.join("processes.md"), "process data")
+                .expect("processes should be writable");
+
+            let runtime_path = role_state::runtime_prompt_path(&project_root, role_name);
+            fs::write(&runtime_path, "runtime prompt")
+                .expect("runtime prompt should be writable");
+
+            let artifacts_dir = role_dir.join("artifacts");
+            fs::write(artifacts_dir.join("report.txt"), "report content")
+                .expect("artifact should be writable");
+            fs::create_dir_all(artifacts_dir.join("subdir"))
+                .expect("artifact subdir should be created");
+            fs::write(artifacts_dir.join("subdir").join("nested.md"), "nested")
+                .expect("nested artifact should be writable");
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&prompt_path, "# Custom prompt\n\nKeep this.")
+                .expect("prompt should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                format!("history cleared for role '{role_name}'\n")
+            );
+            assert_eq!(output.stderr, "");
+
+            // State files should be empty
+            assert_eq!(
+                fs::read_to_string(role_dir.join("session.md")).unwrap(),
+                ""
+            );
+            assert_eq!(
+                fs::read_to_string(role_dir.join("needs-from-operator.md")).unwrap(),
+                ""
+            );
+            assert_eq!(
+                fs::read_to_string(role_dir.join("projects.md")).unwrap(),
+                ""
+            );
+            assert_eq!(
+                fs::read_to_string(role_dir.join("processes.md")).unwrap(),
+                ""
+            );
+
+            // Runtime prompt should be deleted
+            assert!(
+                !runtime_path.exists(),
+                "juliet-prompt.md should be deleted"
+            );
+
+            // Artifacts directory should be empty but still exist
+            assert!(artifacts_dir.is_dir(), "artifacts directory should be preserved");
+            assert_eq!(
+                fs::read_dir(&artifacts_dir).unwrap().count(),
+                0,
+                "artifacts directory should be empty"
+            );
+
+            // prompt.md should be preserved
+            assert_eq!(
+                fs::read_to_string(&prompt_path).unwrap(),
+                "# Custom prompt\n\nKeep this."
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_fails_when_role_not_initialized() {
+            let temp = TestDir::new("integration-clear-history-not-initialized");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", "missing-role"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Role 'missing-role' is not initialized.\n"
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_fails_with_invalid_role_name() {
+            let temp = TestDir::new("integration-clear-history-invalid-name");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", "Invalid_Name"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens.\n"
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_without_role_prints_usage_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-clear-history-usage");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["clear-history"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, format!("{CLEAR_HISTORY_USAGE}\n"));
+            assert_eq!(output.stderr, "");
+        }
+
+        #[test]
+        fn cli_clear_history_preserves_prompt_md() {
+            let temp = TestDir::new("integration-clear-history-preserves-prompt");
+            let project_root = create_project_root(&temp);
+            let role_name = "operations";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&prompt_path, "# Custom operations prompt\n\nPreserve me.")
+                .expect("prompt should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                fs::read_to_string(&prompt_path).unwrap(),
+                "# Custom operations prompt\n\nPreserve me."
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_succeeds_when_no_runtime_prompt_exists() {
+            let temp = TestDir::new("integration-clear-history-no-runtime-prompt");
+            let project_root = create_project_root(&temp);
+            let role_name = "qa";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let runtime_path = role_state::runtime_prompt_path(&project_root, role_name);
+            assert!(!runtime_path.exists());
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                format!("history cleared for role '{role_name}'\n")
+            );
+            assert_eq!(output.stderr, "");
+        }
+
+        // exec integration tests
+
+        #[test]
+        fn cli_exec_explicit_role_stages_prompt_and_appends_message() {
+            let temp = TestDir::new("integration-exec-explicit");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-marketing";
+            let role_prompt = "# Exec role prompt\n\nRun the exec workflow.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let role_prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&role_prompt_path, role_prompt).expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let output = run_cli(
+                &project_root,
+                &["exec", "--role", role_name, "codex", "fix", "the", "bug"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, "");
+
+            let expected_prompt =
+                format!("{role_prompt}\n\nUser input:\nfix the bug");
+            assert_eq!(
+                mock_codex.recorded_args(),
+                vec![
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                    expected_prompt.clone(),
+                ]
+            );
+
+            let runtime_prompt =
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable");
+            assert_eq!(runtime_prompt, role_prompt);
+        }
+
+        #[test]
+        fn cli_exec_implicit_single_role_stages_prompt_and_appends_message() {
+            let temp = TestDir::new("integration-exec-implicit");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+            let role_prompt = "# Implicit exec prompt\n\nDo exec work.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
+                .expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let output = run_cli(
+                &project_root,
+                &["exec", "codex", "deploy", "now"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, "");
+
+            let expected_prompt =
+                format!("{role_prompt}\n\nUser input:\ndeploy now");
+            assert_eq!(mock_codex.recorded_prompt(), expected_prompt);
+
+            let runtime_prompt =
+                fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
+                    .expect("runtime prompt should be readable");
+            assert_eq!(runtime_prompt, role_prompt);
+        }
+
+        #[test]
+        fn cli_exec_returns_engine_exit_code() {
+            let temp = TestDir::new("integration-exec-exit-code");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let mock_codex = MockCodex::new(temp.path(), 7);
+            let output = run_cli(
+                &project_root,
+                &["exec", "--role", role_name, "codex", "hello"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 7);
+        }
+
+        #[test]
+        fn cli_exec_with_missing_role_prints_error_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-exec-missing-role");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["exec", "--role", "missing-role", "codex", "hello"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Role not found: missing-role. Run: juliet init --role missing-role\n"
+            );
+        }
+
+        #[test]
+        fn cli_exec_implicit_with_no_roles_prints_error_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-exec-no-roles");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["exec", "codex", "hello"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, format!("{NO_ROLES_CONFIGURED_ERROR}\n"));
+        }
+
+        #[test]
+        fn cli_exec_implicit_with_multiple_roles_prints_error_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-exec-multi-roles");
+            let project_root = create_project_root(&temp);
+
+            let init1 = run_cli(&project_root, &["init", "--role", "alpha-team"], None);
+            assert_eq!(init1.exit_code, 0);
+            let init2 = run_cli(&project_root, &["init", "--role", "zeta-team"], None);
+            assert_eq!(init2.exit_code, 0);
+
+            let output = run_cli(
+                &project_root,
+                &["exec", "codex", "hello"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team\n"
             );
         }
     }

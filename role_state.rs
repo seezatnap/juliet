@@ -104,6 +104,37 @@ fn has_role_state_layout(role_dir: &Path) -> bool {
         && role_dir.join(ARTIFACTS_DIR).is_dir()
 }
 
+pub fn clear_role_history(project_root: &Path, role_name: &str) -> io::Result<()> {
+    let role_dir = role_state_dir(project_root, role_name);
+
+    // Empty state files
+    for file in STATE_FILES {
+        fs::write(role_dir.join(file), "")?;
+    }
+
+    // Delete runtime prompt if present
+    let runtime_path = runtime_prompt_path(project_root, role_name);
+    if runtime_path.exists() {
+        fs::remove_file(&runtime_path)?;
+    }
+
+    // Clear artifacts directory contents while preserving the directory
+    let artifacts_dir = role_dir.join(ARTIFACTS_DIR);
+    if artifacts_dir.is_dir() {
+        for entry in fs::read_dir(&artifacts_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                fs::remove_dir_all(&path)?;
+            } else {
+                fs::remove_file(&path)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn ensure_file(path: &Path) -> io::Result<()> {
     if path.exists() {
         if path.is_file() {
