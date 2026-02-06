@@ -1,68 +1,60 @@
 # Juliet
 
-A minimal Rust CLI wrapper around Claude/Codex. The CLI selects a role prompt, appends optional operator input, and hands the final prompt to an engine; workflow behavior lives in markdown prompts plus `.juliet/<role>/` state.
+Juliet is a simple bootup script for Claude Code or Codex. By default, it's built to be an expert at using Swarm Hug, another library I wrote which manages swarms of agents in a sprint-like configuration. But you can tweak the prompt to make it an expert at anything else.
 
-**Usage**
-```bash
-juliet init --role <name>
-juliet --role <name> <claude|codex> [operator input...]
-juliet <claude|codex> [operator input...]
+## Initializing
+
+You fire up Juliet by creating a new role. This will use the default prompt, which is a team orchestrator / director:
+
+`juliet init --role eng-lead`
+
+Boot Juliet up:
+
+`juliet --role eng-lead claude`
+
+Juliet will scan your project for existing configurations in the `.juliet` folder for rehydration, but this is a new project so it will simply ask:
+
+`hi, i'm juliet. what do you want to work on today?`
+
+##  Creating a project.
+
+At this point you can create a new project by talking to Juliet, providing a PRD, etc.
+
+Juliet will create the project, saving the necessary information to its memory so that it can rehydrate from a cold reboot later (you can also switch between codex and claude code easily)
+
+Juliet will have you review the plan, and then ask how many attempts you'd like to make. These will be stored in separate worktrees. It will also ask if you'd like to run them with claude, codex, or a mix.
+
+Now you wait. Sprints can take a long time, up to an hour if the tasks are heavy. So you can periodically just ask for status. Juliet's state contains what it needs from *you*, so you could build a tool to scan for those if you need more active visibility.
+
+By default Juliet will run one sprint at a time, then ask for your feedback. You can tell it not to do this, to just run them all. Or you can review the first one, then tell it to run two sprints before asking for your feedback.
+
+You can also tell Juliet to code-review and compare the branches to pick winners, ask it to inject tasks based on what it's seeing, or kill worktrees that are going off the rails. This keeps you as human-in-the-loop but manages the actual interaction with the code for you. You can of course dive into the worktree, make any changes you like, then continue. Because Juliet stops to ask for feedback you control the cadence of this.
+
+Once you're done, just ask Juliet to merge for you, and ask her to clean up the worktrees. 
+
+## Installation
+
+Juliet is built to be unobstructive, thus needs to be run without confirmations (i.e., it is inherently dangerous to run outside of a sandbox). You should run it in a docker container, or a cloud machine. I use Digital Ocean droplets myself.
+
+```
+brew install swarm // fix command
+brew install juliet
 ```
 
-- `juliet` with no args prints usage and exits with code `1`.
-- `juliet init` without `--role <name>` prints `Usage: juliet init --role <name>` and exits with code `1`.
+## Commands
 
-**Role Initialization**
-- Create or repair a role with `juliet init --role <name>`.
-- Success output: `Initialized role: <name>`.
-- If both `prompts/<name>.md` and `.juliet/<name>/` already exist, init is idempotent and prints `Role already exists: <name>`.
-- Init seeds `prompts/<name>.md` with a role heading, an operator placeholder, and the embedded default prompt content from `prompts/juliet.md`.
+The CLI is minimalistic and supports interactive and non-interactive modes (so you can use it directly in chat, or programatically via a heartbeat)
 
-**Role Launch**
-- Explicit role: `juliet --role <name> <claude|codex> [operator input...]`.
-- Implicit role: `juliet <claude|codex> [operator input...]`.
-- Explicit launch fails with `Role not found: <name>. Run: juliet init --role <name>` when `.juliet/<name>/` is missing.
-- Each launch reads `prompts/<name>.md`, writes it to `.juliet/<name>/juliet-prompt.md`, appends optional `User input:` text, then invokes the selected engine.
-
-**Launch Without `--role`**
-- Juliet discovers configured roles from `.juliet/` subdirectories.
-- `0` roles: prints `No roles configured. Run: juliet init --role <name>` and exits with code `1`.
-- `1` role: auto-selects that role and launches.
-- `>1` roles: prints `Multiple roles found. Specify one with --role <name>:` followed by a newline-separated list of role names, then exits with code `1`.
-
-**Role Name Constraints**
-- Allowed pattern: `[a-z0-9-]+`.
-- Names must be non-empty and cannot start or end with `-`.
-- Invalid names fail with: `Invalid role name: <name>. Use lowercase letters, numbers, and hyphens.`
-
-**Project Layout**
-```text
-prompts/
-  juliet.md                    # legacy/default seed prompt, not a configured role by itself
-  <role>.md                    # role-specific prompt source
-
-.juliet/
-  <role>/
-    session.md
-    needs-from-operator.md
-    projects.md
-    processes.md
-    artifacts/
-    juliet-prompt.md           # runtime copy written at launch
 ```
+Usage: juliet <command> [options]
 
-Configured roles are discovered from `.juliet/<role>/` directories. A `prompts/<role>.md` file without matching state directory is not treated as configured.
+Commands:
+  Initialize a new role:
+    juliet init --role <name>
 
-**No Roles Yet?**
-- In a fresh project, run:
-```bash
-juliet init --role director-of-engineering
+  Launch a specific role:
+    juliet --role <name> <claude|codex>
+
+  Launch (auto-selects role when only one exists):
+    juliet <claude|codex>
 ```
-- Then launch with either:
-```bash
-juliet --role director-of-engineering codex
-# or, with one configured role:
-juliet codex
-```
-
-The Rust CLI stays intentionally thin: prompt + state selection and engine dispatch happen in code, while workflow policy remains in prompt markdown.
