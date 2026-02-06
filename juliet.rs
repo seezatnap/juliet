@@ -2814,7 +2814,14 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             let expected_prompt =
                 format!("{role_prompt}\n\nUser input:\ndeploy now");
-            assert_eq!(mock_codex.recorded_prompt(), expected_prompt);
+            assert_eq!(
+                mock_codex.recorded_args(),
+                vec![
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                    "-q".to_string(),
+                    expected_prompt,
+                ]
+            );
 
             let runtime_prompt =
                 fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
