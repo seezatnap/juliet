@@ -28,5 +28,5 @@
 ## Follow-up tasks (from sprint review)
 - [ ] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1)
 - [ ] (#12) Mark tasks #6 and #7 as complete in tasks.md — parser unit tests for `reset-prompt`, `clear-history`, and `exec` were delivered as part of #1's implementation on the feature branch (blocked by #1)
-- [C] (#13) Update tasks.md to mark #1 as complete — the sprint delivered all parsing, usage text, and stub handlers specified by #1
+- [x] (#13) Update tasks.md to mark #1 as complete — the sprint delivered all parsing, usage text, and stub handlers specified by #1
 - [ ] (#14) Update tasks.md to mark #6 and #7 as complete — comprehensive parser unit tests for `reset-prompt`, `clear-history`, and `exec` were included in the #1 implementation
