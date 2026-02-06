@@ -1,8 +1,8 @@
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 mod role_name;
 mod role_state;
@@ -130,27 +130,20 @@ fn parse_operator_input(args: &[String]) -> Option<String> {
 }
 
 fn run_codex(prompt: &str, cwd: &Path) -> io::Result<i32> {
-    let mut child = Command::new("codex")
-        .arg("exec")
+    let status = Command::new("codex")
         .arg("--dangerously-bypass-approvals-and-sandbox")
-        .arg("-C")
-        .arg(cwd)
-        .arg("-")
-        .stdin(Stdio::piped())
-        .spawn()?;
+        .arg(prompt)
+        .current_dir(cwd)
+        .status()?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())?;
-    }
-
-    let status = child.wait()?;
     Ok(status.code().unwrap_or(1))
 }
 
 fn run_claude(prompt: &str, cwd: &Path) -> io::Result<i32> {
     let status = Command::new("claude")
-        .arg("-p")
+        .arg("--dangerously-skip-permissions")
         .arg(prompt)
+        .env("IS_SANDBOX", "1")
         .current_dir(cwd)
         .status()?;
 
@@ -882,7 +875,6 @@ mod tests {
         struct MockCodex {
             bin_dir: PathBuf,
             args_file: PathBuf,
-            stdin_file: PathBuf,
             exit_code: i32,
         }
 
@@ -892,15 +884,13 @@ mod tests {
                 fs::create_dir_all(&bin_dir).expect("mock bin directory should exist");
 
                 let args_file = root.join("mock-codex-args.txt");
-                let stdin_file = root.join("mock-codex-stdin.txt");
                 let codex_path = bin_dir.join("codex");
 
                 fs::write(
                     &codex_path,
                     r#"#!/usr/bin/env bash
 set -eu
-printf '%s\n' "$@" > "${JULIET_TEST_CODEX_ARGS_FILE:?}"
-cat > "${JULIET_TEST_CODEX_STDIN_FILE:?}"
+printf '%s\0' "$@" > "${JULIET_TEST_CODEX_ARGS_FILE:?}"
 exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
 "#,
                 )
@@ -916,7 +906,6 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 Self {
                     bin_dir,
                     args_file,
-                    stdin_file,
                     exit_code,
                 }
             }
@@ -931,7 +920,6 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
 
                 command.env("PATH", path_value);
                 command.env("JULIET_TEST_CODEX_ARGS_FILE", &self.args_file);
-                command.env("JULIET_TEST_CODEX_STDIN_FILE", &self.stdin_file);
                 command.env(
                     "JULIET_TEST_CODEX_EXIT_CODE",
                     self.exit_code.to_string(),
@@ -941,14 +929,17 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             fn recorded_args(&self) -> Vec<String> {
                 fs::read_to_string(&self.args_file)
                     .expect("mock codex args capture should be readable")
-                    .lines()
-                    .map(|line| line.to_string())
+                    .split('\0')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
                     .collect()
             }
 
             fn recorded_prompt(&self) -> String {
-                fs::read_to_string(&self.stdin_file)
-                    .expect("mock codex stdin capture should be readable")
+                let args = self.recorded_args();
+                args.last()
+                    .expect("mock codex should have received at least one argument")
+                    .clone()
             }
         }
 
@@ -1150,14 +1141,10 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             assert_eq!(
                 mock_codex.recorded_args(),
                 vec![
-                    "exec".to_string(),
                     "--dangerously-bypass-approvals-and-sandbox".to_string(),
-                    "-C".to_string(),
-                    project_root.display().to_string(),
-                    "-".to_string(),
+                    role_prompt.to_string(),
                 ]
             );
-            assert_eq!(mock_codex.recorded_prompt(), role_prompt);
             assert_eq!(
                 fs::read_to_string(role_state::runtime_prompt_path(&project_root, role_name))
                     .expect("runtime prompt should be readable"),
