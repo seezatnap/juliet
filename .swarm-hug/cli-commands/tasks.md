@@ -35,7 +35,7 @@
 - [x] (#15) Fix task #2 marker in tasks.md — it shows `[A]` (agent assignment) instead of `[x]`; the reset-prompt implementation is fully complete with unit and integration tests (B)
 - [x] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint (C)
 - [x] (#17) Mark tasks #11, #12, and #14 as complete in tasks.md — the tasks they describe (marking #1, #6, #7 complete) are already done (C)
-- [C] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5)
+- [x] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5)
 
 ## Follow-up tasks (from sprint review)
 - [x] (#19) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; the merge at commit `1c7eb42` appears to have reverted Betty's fix (C)
@@ -45,4 +45,4 @@
 - [x] (#21) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; three prior attempts (#15, #19, #20) all failed to actually change it
 - [x] (#22) Mark task #5 as complete in tasks.md — `run_claude_print`, `run_codex_quiet`, `run_engine_print`, and exit-code propagation were fully implemented and tested in commit `79b043c`
 - [x] (#23) Fix task #15 marker in tasks.md — it still shows `[B]` instead of `[x]`; task #20 claimed to fix it but did not
-- [B] (#24) Mark tasks #10 and #18 as complete in tasks.md — the exec integration tests they describe (non-interactive `-p`/`-q` flags, `IS_SANDBOX=1` env, prompt content, exit code propagation) were delivered in commit `79b043c` (blocked by #5)
+- [x] (#24) Mark tasks #10 and #18 as complete in tasks.md — the exec integration tests they describe (non-interactive `-p`/`-q` flags, `IS_SANDBOX=1` env, prompt content, exit code propagation) were delivered in commit `79b043c` (blocked by #5)
