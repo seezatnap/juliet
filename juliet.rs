@@ -620,6 +620,61 @@ mod tests {
         assert_eq!(error, CliError::ResetPromptUsage);
     }
 
+    #[test]
+    fn parses_reset_prompt_with_simple_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["reset-prompt", "--role", "ops"])),
+            Ok(CliCommand::ResetPrompt {
+                role_name: "ops".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_reset_prompt_with_numeric_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["reset-prompt", "--role", "agent-007"])),
+            Ok(CliCommand::ResetPrompt {
+                role_name: "agent-007".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn reset_prompt_parser_passes_through_invalid_role_names() {
+        // The parser does not validate role names; validation is deferred to execution.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let result = parse_cli_command(&to_args(&["reset-prompt", "--role", bad_name]));
+            assert_eq!(
+                result,
+                Ok(CliCommand::ResetPrompt {
+                    role_name: bad_name.to_string()
+                }),
+                "parser should accept any string as role_name without validation: {bad_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn reset_prompt_bad_role_name_rejected_by_validation() {
+        // Role name validation rejects names that the parser passes through.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let err = role_name::validate_role_name(bad_name)
+                .expect_err(&format!("role name '{bad_name}' should be rejected"));
+            assert!(
+                err.contains("Invalid role name"),
+                "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn reset_prompt_usage_error_when_role_flag_not_second_arg() {
+        let error =
+            parse_cli_command(&to_args(&["reset-prompt", "my-role", "--role"])).unwrap_err();
+        assert_eq!(error, CliError::ResetPromptUsage);
+    }
+
     // clear-history parsing tests
 
     #[test]
@@ -657,6 +712,61 @@ mod tests {
     fn clear_history_usage_error_when_wrong_flag() {
         let error =
             parse_cli_command(&to_args(&["clear-history", "--name", "my-role"])).unwrap_err();
+        assert_eq!(error, CliError::ClearHistoryUsage);
+    }
+
+    #[test]
+    fn parses_clear_history_with_simple_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["clear-history", "--role", "qa"])),
+            Ok(CliCommand::ClearHistory {
+                role_name: "qa".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_clear_history_with_numeric_role_name() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["clear-history", "--role", "team-42"])),
+            Ok(CliCommand::ClearHistory {
+                role_name: "team-42".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn clear_history_parser_passes_through_invalid_role_names() {
+        // The parser does not validate role names; validation is deferred to execution.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let result = parse_cli_command(&to_args(&["clear-history", "--role", bad_name]));
+            assert_eq!(
+                result,
+                Ok(CliCommand::ClearHistory {
+                    role_name: bad_name.to_string()
+                }),
+                "parser should accept any string as role_name without validation: {bad_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn clear_history_bad_role_name_rejected_by_validation() {
+        // Role name validation rejects names that the parser passes through.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let err = role_name::validate_role_name(bad_name)
+                .expect_err(&format!("role name '{bad_name}' should be rejected"));
+            assert!(
+                err.contains("Invalid role name"),
+                "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn clear_history_usage_error_when_role_flag_not_second_arg() {
+        let error =
+            parse_cli_command(&to_args(&["clear-history", "my-role", "--role"])).unwrap_err();
         assert_eq!(error, CliError::ClearHistoryUsage);
     }
 
