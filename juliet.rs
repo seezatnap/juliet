@@ -1015,6 +1015,110 @@ mod tests {
     }
 
     #[test]
+    fn exec_explicit_role_joins_remaining_args_into_message() {
+        assert_eq!(
+            parse_cli_command(&to_args(&[
+                "exec", "--role", "my-role", "claude", "please", "fix", "all", "the", "bugs"
+            ])),
+            Ok(CliCommand::Exec {
+                role_name: Some("my-role".to_string()),
+                engine: Engine::Claude,
+                message: "please fix all the bugs".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn exec_parser_passes_through_invalid_role_names() {
+        // The parser does not validate role names; validation is deferred to execution.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let result = parse_cli_command(&to_args(&[
+                "exec", "--role", bad_name, "claude", "hello",
+            ]));
+            assert_eq!(
+                result,
+                Ok(CliCommand::Exec {
+                    role_name: Some(bad_name.to_string()),
+                    engine: Engine::Claude,
+                    message: "hello".to_string(),
+                }),
+                "parser should accept any string as role_name without validation: {bad_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn exec_bad_role_name_rejected_by_validation() {
+        // Role name validation rejects names that the parser passes through.
+        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
+            let err = role_name::validate_role_name(bad_name)
+                .expect_err(&format!("role name '{bad_name}' should be rejected"));
+            assert!(
+                err.contains("Invalid role name"),
+                "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn exec_engine_parsing_is_case_sensitive() {
+        // Only lowercase "claude" and "codex" are valid engines.
+        for invalid_engine in ["Claude", "CLAUDE", "Codex", "CODEX", "Claude3", "gpt4"] {
+            let error_implicit =
+                parse_cli_command(&to_args(&["exec", invalid_engine, "hello"])).unwrap_err();
+            assert_eq!(
+                error_implicit, CliError::ExecUsage,
+                "implicit form should reject engine '{invalid_engine}'"
+            );
+
+            let error_explicit = parse_cli_command(&to_args(&[
+                "exec",
+                "--role",
+                "my-role",
+                invalid_engine,
+                "hello",
+            ]))
+            .unwrap_err();
+            assert_eq!(
+                error_explicit, CliError::ExecUsage,
+                "explicit form should reject engine '{invalid_engine}'"
+            );
+        }
+    }
+
+    #[test]
+    fn exec_usage_error_message_matches_exec_usage_constant() {
+        let error = parse_cli_command(&to_args(&["exec"])).unwrap_err();
+        assert_eq!(error.message(), EXEC_USAGE);
+
+        let error = parse_cli_command(&to_args(&["exec", "claude"])).unwrap_err();
+        assert_eq!(error.message(), EXEC_USAGE);
+
+        let error =
+            parse_cli_command(&to_args(&["exec", "--role", "my-role"])).unwrap_err();
+        assert_eq!(error.message(), EXEC_USAGE);
+    }
+
+    #[test]
+    fn exec_message_preserves_whitespace_between_args() {
+        // Each arg is joined by a single space; internal whitespace within args is preserved.
+        assert_eq!(
+            parse_cli_command(&to_args(&["exec", "codex", "word1", "word2", "word3"])),
+            Ok(CliCommand::Exec {
+                role_name: None,
+                engine: Engine::Codex,
+                message: "word1 word2 word3".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn exec_usage_error_when_role_flag_present_but_missing_role_name_and_engine() {
+        let error = parse_cli_command(&to_args(&["exec", "--role"])).unwrap_err();
+        assert_eq!(error, CliError::ExecUsage);
+    }
+
+    #[test]
     fn usage_error_when_no_arguments_are_provided() {
         let error = parse_cli_command(&to_args(&[])).unwrap_err();
         assert_eq!(error, CliError::Usage);
