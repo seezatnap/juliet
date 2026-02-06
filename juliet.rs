@@ -251,6 +251,36 @@ fn run_engine(engine: Engine, prompt: &str, cwd: &Path) -> io::Result<i32> {
     }
 }
 
+fn run_claude_print(prompt: &str, cwd: &Path) -> io::Result<i32> {
+    let status = Command::new("claude")
+        .arg("--dangerously-skip-permissions")
+        .arg("-p")
+        .arg(prompt)
+        .env("IS_SANDBOX", "1")
+        .current_dir(cwd)
+        .status()?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
+fn run_codex_quiet(prompt: &str, cwd: &Path) -> io::Result<i32> {
+    let status = Command::new("codex")
+        .arg("--dangerously-bypass-approvals-and-sandbox")
+        .arg("-q")
+        .arg(prompt)
+        .current_dir(cwd)
+        .status()?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
+fn run_engine_print(engine: Engine, prompt: &str, cwd: &Path) -> io::Result<i32> {
+    match engine {
+        Engine::Claude => run_claude_print(prompt, cwd),
+        Engine::Codex => run_codex_quiet(prompt, cwd),
+    }
+}
+
 fn build_launch_prompt(base: &str, operator_input: Option<&str>) -> String {
     if let Some(input) = operator_input {
         format!("{base}\n\nUser input:\n{input}")
@@ -554,7 +584,7 @@ fn run_exec_command(role_name: Option<&str>, engine: Engine, message: &str) -> i
         }
     };
 
-    run_exec_command_in_dir(&cwd, role_name, engine, message, run_engine)
+    run_exec_command_in_dir(&cwd, role_name, engine, message, run_engine_print)
 }
 
 fn main() {
@@ -1940,22 +1970,6 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 }
             }
 
-            fn configure_command(&self, command: &mut Command) {
-                let existing_path = env::var("PATH").unwrap_or_default();
-                let path_value = if existing_path.is_empty() {
-                    self.bin_dir.display().to_string()
-                } else {
-                    format!("{}:{existing_path}", self.bin_dir.display())
-                };
-
-                command.env("PATH", path_value);
-                command.env("JULIET_TEST_CODEX_ARGS_FILE", &self.args_file);
-                command.env(
-                    "JULIET_TEST_CODEX_EXIT_CODE",
-                    self.exit_code.to_string(),
-                );
-            }
-
             fn recorded_args(&self) -> Vec<String> {
                 fs::read_to_string(&self.args_file)
                     .expect("mock codex args capture should be readable")
@@ -1970,6 +1984,63 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 args.last()
                     .expect("mock codex should have received at least one argument")
                     .clone()
+            }
+        }
+
+        struct MockClaude {
+            bin_dir: PathBuf,
+            args_file: PathBuf,
+            env_file: PathBuf,
+            exit_code: i32,
+        }
+
+        impl MockClaude {
+            fn new(root: &Path, exit_code: i32) -> Self {
+                let bin_dir = root.join("mock-bin");
+                fs::create_dir_all(&bin_dir).expect("mock bin directory should exist");
+
+                let args_file = root.join("mock-claude-args.txt");
+                let env_file = root.join("mock-claude-env.txt");
+                let claude_path = bin_dir.join("claude");
+
+                fs::write(
+                    &claude_path,
+                    r#"#!/usr/bin/env bash
+set -eu
+printf '%s\0' "$@" > "${JULIET_TEST_CLAUDE_ARGS_FILE:?}"
+printf 'IS_SANDBOX=%s\n' "${IS_SANDBOX:-}" > "${JULIET_TEST_CLAUDE_ENV_FILE:?}"
+exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
+"#,
+                )
+                .expect("mock claude script should be writable");
+
+                let mut permissions = fs::metadata(&claude_path)
+                    .expect("mock claude script metadata should be readable")
+                    .permissions();
+                permissions.set_mode(0o755);
+                fs::set_permissions(&claude_path, permissions)
+                    .expect("mock claude script should be executable");
+
+                Self {
+                    bin_dir,
+                    args_file,
+                    env_file,
+                    exit_code,
+                }
+            }
+
+            fn recorded_args(&self) -> Vec<String> {
+                fs::read_to_string(&self.args_file)
+                    .expect("mock claude args capture should be readable")
+                    .split('\0')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            }
+
+            fn recorded_env(&self) -> String {
+                fs::read_to_string(&self.env_file)
+                    .expect("mock claude env capture should be readable")
             }
         }
 
@@ -2032,10 +2103,48 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             args: &[&str],
             mock_codex: Option<&MockCodex>,
         ) -> CliOutput {
+            run_cli_with_engines(project_root, args, mock_codex, None)
+        }
+
+        fn run_cli_with_engines(
+            project_root: &Path,
+            args: &[&str],
+            mock_codex: Option<&MockCodex>,
+            mock_claude: Option<&MockClaude>,
+        ) -> CliOutput {
             let mut command = Command::new(cli_binary_path());
             command.args(args).current_dir(project_root);
+
+            // Collect PATH components from mocks
+            let existing_path = env::var("PATH").unwrap_or_default();
+            let mut path_dirs: Vec<String> = Vec::new();
+
             if let Some(mock) = mock_codex {
-                mock.configure_command(&mut command);
+                path_dirs.push(mock.bin_dir.display().to_string());
+                command.env("JULIET_TEST_CODEX_ARGS_FILE", &mock.args_file);
+                command.env(
+                    "JULIET_TEST_CODEX_EXIT_CODE",
+                    mock.exit_code.to_string(),
+                );
+            }
+
+            if let Some(mock) = mock_claude {
+                if !path_dirs.iter().any(|d| d == &mock.bin_dir.display().to_string()) {
+                    path_dirs.push(mock.bin_dir.display().to_string());
+                }
+                command.env("JULIET_TEST_CLAUDE_ARGS_FILE", &mock.args_file);
+                command.env("JULIET_TEST_CLAUDE_ENV_FILE", &mock.env_file);
+                command.env(
+                    "JULIET_TEST_CLAUDE_EXIT_CODE",
+                    mock.exit_code.to_string(),
+                );
+            }
+
+            if !path_dirs.is_empty() {
+                if !existing_path.is_empty() {
+                    path_dirs.push(existing_path);
+                }
+                command.env("PATH", path_dirs.join(":"));
             }
 
             let output = command.output().expect("CLI command should execute");
@@ -2669,6 +2778,7 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 mock_codex.recorded_args(),
                 vec![
                     "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                    "-q".to_string(),
                     expected_prompt.clone(),
                 ]
             );
@@ -2787,6 +2897,144 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             assert_eq!(
                 output.stderr,
                 "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team\n"
+            );
+        }
+
+        #[test]
+        fn cli_exec_claude_uses_print_flag_and_sandbox_env() {
+            let temp = TestDir::new("integration-exec-claude-print");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+            let role_prompt = "# Claude exec prompt\n\nRun claude exec.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let role_prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&role_prompt_path, role_prompt).expect("role prompt should be writable");
+
+            let mock_claude = MockClaude::new(temp.path(), 0);
+            let output = run_cli_with_engines(
+                &project_root,
+                &["exec", "--role", role_name, "claude", "do", "the", "thing"],
+                None,
+                Some(&mock_claude),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, "");
+
+            let expected_prompt = format!("{role_prompt}\n\nUser input:\ndo the thing");
+            assert_eq!(
+                mock_claude.recorded_args(),
+                vec![
+                    "--dangerously-skip-permissions".to_string(),
+                    "-p".to_string(),
+                    expected_prompt,
+                ]
+            );
+
+            let env_output = mock_claude.recorded_env();
+            assert!(
+                env_output.contains("IS_SANDBOX=1"),
+                "IS_SANDBOX env var should be set to 1, got: {env_output}"
+            );
+        }
+
+        #[test]
+        fn cli_exec_claude_returns_engine_exit_code() {
+            let temp = TestDir::new("integration-exec-claude-exit-code");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let mock_claude = MockClaude::new(temp.path(), 3);
+            let output = run_cli_with_engines(
+                &project_root,
+                &["exec", "--role", role_name, "claude", "hello"],
+                None,
+                Some(&mock_claude),
+            );
+
+            assert_eq!(output.exit_code, 3);
+        }
+
+        #[test]
+        fn cli_exec_codex_uses_quiet_flag() {
+            let temp = TestDir::new("integration-exec-codex-quiet");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+            let role_prompt = "# Codex exec prompt\n\nRun codex exec.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let role_prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&role_prompt_path, role_prompt).expect("role prompt should be writable");
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let output = run_cli(
+                &project_root,
+                &["exec", "--role", role_name, "codex", "fix", "bug"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, "");
+
+            let expected_prompt = format!("{role_prompt}\n\nUser input:\nfix bug");
+            assert_eq!(
+                mock_codex.recorded_args(),
+                vec![
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                    "-q".to_string(),
+                    expected_prompt,
+                ]
+            );
+        }
+
+        #[test]
+        fn cli_exec_claude_implicit_role_uses_print_flag() {
+            let temp = TestDir::new("integration-exec-claude-implicit");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+            let role_prompt = "# Claude implicit exec\n\nDo work.";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
+                .expect("role prompt should be writable");
+
+            let mock_claude = MockClaude::new(temp.path(), 0);
+            let output = run_cli_with_engines(
+                &project_root,
+                &["exec", "claude", "deploy", "now"],
+                None,
+                Some(&mock_claude),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "");
+            assert_eq!(output.stderr, "");
+
+            let expected_prompt = format!("{role_prompt}\n\nUser input:\ndeploy now");
+            assert_eq!(
+                mock_claude.recorded_args(),
+                vec![
+                    "--dangerously-skip-permissions".to_string(),
+                    "-p".to_string(),
+                    expected_prompt,
+                ]
+            );
+
+            let env_output = mock_claude.recorded_env();
+            assert!(
+                env_output.contains("IS_SANDBOX=1"),
+                "IS_SANDBOX env var should be set to 1, got: {env_output}"
             );
         }
     }
