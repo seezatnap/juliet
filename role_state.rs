@@ -5,8 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 const JULIET_STATE_DIR: &str = ".juliet";
-const PROMPTS_DIR: &str = "prompts";
 const ARTIFACTS_DIR: &str = "artifacts";
+const PROMPT_FILE: &str = "prompt.md";
 const RUNTIME_PROMPT_FILE: &str = "juliet-prompt.md";
 const STATE_FILES: [&str; 4] = [
     "session.md",
@@ -26,9 +26,7 @@ pub fn role_state_dir(project_root: &Path, role_name: &str) -> PathBuf {
 }
 
 pub fn role_prompt_path(project_root: &Path, role_name: &str) -> PathBuf {
-    project_root
-        .join(PROMPTS_DIR)
-        .join(format!("{role_name}.md"))
+    role_state_dir(project_root, role_name).join(PROMPT_FILE)
 }
 
 pub fn runtime_prompt_path(project_root: &Path, role_name: &str) -> PathBuf {
@@ -200,7 +198,10 @@ mod tests {
         );
         assert_eq!(
             role_prompt_path(temp.path(), role_name),
-            temp.path().join(PROMPTS_DIR).join("operations.md")
+            temp.path()
+                .join(JULIET_STATE_DIR)
+                .join(role_name)
+                .join(PROMPT_FILE)
         );
         assert_eq!(
             runtime_prompt_path(temp.path(), role_name),
@@ -323,13 +324,6 @@ mod tests {
         fs::create_dir_all(state_root.join("juliet")).expect("juliet role should be created");
         fs::write(state_root.join("README.md"), "not a role")
             .expect("non-directory entry should be created");
-
-        let prompts_root = temp.path().join(PROMPTS_DIR);
-        fs::create_dir_all(&prompts_root).expect("prompts root should be created");
-        fs::write(prompts_root.join("juliet.md"), "legacy default prompt")
-            .expect("legacy prompt should exist");
-        fs::write(prompts_root.join("analyst.md"), "prompt with no role state")
-            .expect("orphan prompt should exist");
 
         let roles = discover_configured_roles(temp.path()).expect("discovery should succeed");
         assert_eq!(

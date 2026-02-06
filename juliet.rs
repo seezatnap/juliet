@@ -519,12 +519,10 @@ mod tests {
 
         fs::create_dir_all(temp.path().join(".juliet"))
             .expect("state root should exist for traversal regression test");
-        fs::create_dir_all(temp.path().join("prompts"))
-            .expect("prompts root should exist for traversal regression test");
         fs::create_dir_all(&escaped_role_dir)
             .expect("escaped role directory should exist outside .juliet");
-        fs::write(temp.path().join("escaped-role.md"), "# escaped prompt")
-            .expect("escaped prompt file should exist outside prompts");
+        fs::write(escaped_role_dir.join("prompt.md"), "# escaped prompt")
+            .expect("escaped prompt file should exist outside .juliet");
 
         let err = prepare_launch_prompt(temp.path(), Some(escaped_role_name))
             .expect_err("invalid explicit role name should fail before path traversal");
@@ -546,8 +544,6 @@ mod tests {
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
 
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
         fs::write(&prompt_path, "# Explicit prompt\n\nDo role work.")
             .expect("role prompt should be written");
 
@@ -568,8 +564,6 @@ mod tests {
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
 
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
         fs::write(&prompt_path, "# Explicit prompt\n\nDo role work.")
             .expect("role prompt should be written");
 
@@ -613,8 +607,6 @@ mod tests {
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
 
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
         fs::write(&prompt_path, "# Implicit prompt\n\nDo role work.")
             .expect("role prompt should be written");
 
@@ -635,8 +627,6 @@ mod tests {
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
 
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
         fs::write(&prompt_path, "# Juliet role prompt\n\nDo role work.")
             .expect("role prompt should be written");
 
@@ -657,8 +647,6 @@ mod tests {
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
 
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
         fs::write(&prompt_path, "# Artifacts role prompt\n\nDo role work.")
             .expect("role prompt should be written");
 
@@ -679,8 +667,6 @@ mod tests {
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
 
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
         fs::write(&prompt_path, "# Implicit prompt\n\nDo role work.")
             .expect("role prompt should be written");
 
@@ -789,8 +775,8 @@ mod tests {
         let temp = TestDir::new("prompt-only");
         let role_name = "operations";
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
+        fs::create_dir_all(prompt_path.parent().expect("prompt parent dir should exist"))
+            .expect("prompt parent directory should be created");
         fs::write(&prompt_path, "# custom operations prompt").expect("prompt should be created");
 
         let outcome = initialize_role(temp.path(), role_name, "seed prompt")
@@ -814,15 +800,13 @@ mod tests {
     fn initialize_role_scaffolds_missing_state_files_when_prompt_and_legacy_dir_exist() {
         let temp = TestDir::new("artifacts-prompt-and-legacy-dir");
         let role_name = "artifacts";
-        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompts dir should exist"))
-            .expect("prompts directory should be created");
-        fs::write(&prompt_path, "# legacy artifacts prompt").expect("prompt should be created");
-
         let role_dir = role_state::role_state_dir(temp.path(), role_name);
         fs::create_dir_all(&role_dir).expect("legacy artifacts directory should be created");
         fs::write(role_dir.join("legacy-note.txt"), "legacy artifact")
             .expect("legacy artifacts file should be created");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::write(&prompt_path, "# legacy artifacts prompt").expect("prompt should be created");
 
         let outcome = initialize_role(temp.path(), role_name, "seed prompt")
             .expect("init should scaffold missing state files");
