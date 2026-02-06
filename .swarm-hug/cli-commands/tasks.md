@@ -23,7 +23,7 @@
 - [x] (#7) Add unit tests for parser coverage of `exec`: explicit-role and implicit-role forms, engine parsing for `claude|codex`, `<message...>` joining behavior, and missing-arg/bad-role failures [5 pts] (blocked by #1) (B)
 - [x] (#8) Add integration tests (existing `TestDir` pattern) for `reset-prompt` to verify `prompt.md` is overwritten with regenerated default template content and success output is correct [5 pts] (blocked by #2) (A)
 - [x] (#9) Add integration tests (existing `TestDir` pattern) for `clear-history` to verify target state files are emptied, `juliet-prompt.md` is removed if present, artifacts are cleared but directory/prompt are preserved, and success output is correct [5 pts] (blocked by #3) (B)
-- [x] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5)
+- [x] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5) (A)
 
 ## Follow-up tasks (from sprint review)
 - [x] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1) (A)
@@ -35,14 +35,14 @@
 - [x] (#15) Fix task #2 marker in tasks.md — it shows `[A]` (agent assignment) instead of `[x]`; the reset-prompt implementation is fully complete with unit and integration tests (B)
 - [x] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint (C)
 - [x] (#17) Mark tasks #11, #12, and #14 as complete in tasks.md — the tasks they describe (marking #1, #6, #7 complete) are already done (C)
-- [x] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5)
+- [x] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5) (C)
 
 ## Follow-up tasks (from sprint review)
 - [x] (#19) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; the merge at commit `1c7eb42` appears to have reverted Betty's fix (C)
 - [x] (#20) Fix task #15 marker in tasks.md — it shows `[B]` (agent assignment) instead of `[x]`; Betty completed the task but the marker was not updated to complete (C)
 
 ## Follow-up tasks (from sprint review)
-- [x] (#21) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; three prior attempts (#15, #19, #20) all failed to actually change it
-- [x] (#22) Mark task #5 as complete in tasks.md — `run_claude_print`, `run_codex_quiet`, `run_engine_print`, and exit-code propagation were fully implemented and tested in commit `79b043c`
-- [x] (#23) Fix task #15 marker in tasks.md — it still shows `[B]` instead of `[x]`; task #20 claimed to fix it but did not
-- [x] (#24) Mark tasks #10 and #18 as complete in tasks.md — the exec integration tests they describe (non-interactive `-p`/`-q` flags, `IS_SANDBOX=1` env, prompt content, exit code propagation) were delivered in commit `79b043c` (blocked by #5)
+- [x] (#21) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; three prior attempts (#15, #19, #20) all failed to actually change it (B)
+- [x] (#22) Mark task #5 as complete in tasks.md — `run_claude_print`, `run_codex_quiet`, `run_engine_print`, and exit-code propagation were fully implemented and tested in commit `79b043c` (B)
+- [x] (#23) Fix task #15 marker in tasks.md — it still shows `[B]` instead of `[x]`; task #20 claimed to fix it but did not (B)
+- [x] (#24) Mark tasks #10 and #18 as complete in tasks.md — the exec integration tests they describe (non-interactive `-p`/`-q` flags, `IS_SANDBOX=1` env, prompt content, exit code propagation) were delivered in commit `79b043c` (blocked by #5) (B)
