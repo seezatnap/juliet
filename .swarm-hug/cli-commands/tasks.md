@@ -6,7 +6,7 @@
 
 ## Reset Prompt Command
 
-- [A] (#2) Implement `juliet reset-prompt --role <name>` command execution: validate role name via `is_valid_role_name()`, verify `.juliet/<name>/` exists (error exactly `Role '<name>' is not initialized.` if not), regenerate prompt with the same `init` template (`# {role_name}\n\n{OPERATOR_PLACEHOLDER}\n\n## Default Prompt Seed\n\n{DEFAULT_PROMPT_SEED}`), overwrite `.juliet/<name>/prompt.md`, and print `prompt reset to default for role '<name>'` [5 pts] (blocked by #1)
+- [x] (#2) Implement `juliet reset-prompt --role <name>` command execution: validate role name via `is_valid_role_name()`, verify `.juliet/<name>/` exists (error exactly `Role '<name>' is not initialized.` if not), regenerate prompt with the same `init` template (`# {role_name}\n\n{OPERATOR_PLACEHOLDER}\n\n## Default Prompt Seed\n\n{DEFAULT_PROMPT_SEED}`), overwrite `.juliet/<name>/prompt.md`, and print `prompt reset to default for role '<name>'` [5 pts] (blocked by #1) (A)
 
 ## Clear History Command
 
@@ -26,13 +26,17 @@
 - [ ] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5)
 
 ## Follow-up tasks (from sprint review)
-- [ ] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1)
+- [x] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1) (A)
 - [ ] (#12) Mark tasks #6 and #7 as complete in tasks.md — parser unit tests for `reset-prompt`, `clear-history`, and `exec` were delivered as part of #1's implementation on the feature branch (blocked by #1)
 - [x] (#13) Update tasks.md to mark #1 as complete — the sprint delivered all parsing, usage text, and stub handlers specified by #1 (C)
-- [ ] (#14) Update tasks.md to mark #6 and #7 as complete — comprehensive parser unit tests for `reset-prompt`, `clear-history`, and `exec` were included in the #1 implementation
+- [x] (#14) Update tasks.md to mark #6 and #7 as complete — comprehensive parser unit tests for `reset-prompt`, `clear-history`, and `exec` were included in the #1 implementation (B)
 
 ## Follow-up tasks (from sprint review)
-- [ ] (#15) Fix task #2 marker in tasks.md — it shows `[A]` (agent assignment) instead of `[x]`; the reset-prompt implementation is fully complete with unit and integration tests
-- [ ] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint
-- [ ] (#17) Mark tasks #11, #12, and #14 as complete in tasks.md — the tasks they describe (marking #1, #6, #7 complete) are already done
+- [x] (#15) Fix task #2 marker in tasks.md — it shows `[A]` (agent assignment) instead of `[x]`; the reset-prompt implementation is fully complete with unit and integration tests (B)
+- [x] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint (C)
+- [x] (#17) Mark tasks #11, #12, and #14 as complete in tasks.md — the tasks they describe (marking #1, #6, #7 complete) are already done (C)
 - [ ] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5)
+
+## Follow-up tasks (from sprint review)
+- [ ] (#19) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; the merge at commit `1c7eb42` appears to have reverted Betty's fix
+- [ ] (#20) Fix task #15 marker in tasks.md — it shows `[B]` (agent assignment) instead of `[x]`; Betty completed the task but the marker was not updated to complete

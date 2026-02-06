@@ -2409,6 +2409,43 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
             );
         }
 
+        #[test]
+        fn cli_reset_prompt_restores_exact_init_template() {
+            let temp = TestDir::new("integration-reset-prompt-exact-template");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            let original_prompt = fs::read_to_string(&prompt_path)
+                .expect("init should create prompt.md");
+
+            fs::write(&prompt_path, "# Completely replaced prompt\n\nNothing from before.")
+                .expect("prompt should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["reset-prompt", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                format!("prompt reset to default for role '{role_name}'\n")
+            );
+            assert_eq!(output.stderr, "");
+
+            let reset_prompt = fs::read_to_string(&prompt_path)
+                .expect("prompt should be readable after reset");
+            assert_eq!(
+                reset_prompt, original_prompt,
+                "reset-prompt should restore the exact same content as init"
+            );
+        }
+
         // clear-history integration tests
 
         #[test]
