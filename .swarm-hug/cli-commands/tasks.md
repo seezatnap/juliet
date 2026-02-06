@@ -40,3 +40,9 @@
 ## Follow-up tasks (from sprint review)
 - [x] (#19) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; the merge at commit `1c7eb42` appears to have reverted Betty's fix (C)
 - [x] (#20) Fix task #15 marker in tasks.md — it shows `[B]` (agent assignment) instead of `[x]`; Betty completed the task but the marker was not updated to complete (C)
+
+## Follow-up tasks (from sprint review)
+- [ ] (#21) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; three prior attempts (#15, #19, #20) all failed to actually change it
+- [ ] (#22) Mark task #5 as complete in tasks.md — `run_claude_print`, `run_codex_quiet`, `run_engine_print`, and exit-code propagation were fully implemented and tested in commit `79b043c`
+- [ ] (#23) Fix task #15 marker in tasks.md — it still shows `[B]` instead of `[x]`; task #20 claimed to fix it but did not
+- [ ] (#24) Mark tasks #10 and #18 as complete in tasks.md — the exec integration tests they describe (non-interactive `-p`/`-q` flags, `IS_SANDBOX=1` env, prompt content, exit code propagation) were delivered in commit `79b043c` (blocked by #5)
