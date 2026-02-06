@@ -6,7 +6,7 @@
 
 ## Reset Prompt Command
 
-- [A] (#2) Implement `juliet reset-prompt --role <name>` command execution: validate role name via `is_valid_role_name()`, verify `.juliet/<name>/` exists (error exactly `Role '<name>' is not initialized.` if not), regenerate prompt with the same `init` template (`# {role_name}\n\n{OPERATOR_PLACEHOLDER}\n\n## Default Prompt Seed\n\n{DEFAULT_PROMPT_SEED}`), overwrite `.juliet/<name>/prompt.md`, and print `prompt reset to default for role '<name>'` [5 pts] (blocked by #1)
+- [x] (#2) Implement `juliet reset-prompt --role <name>` command execution: validate role name via `is_valid_role_name()`, verify `.juliet/<name>/` exists (error exactly `Role '<name>' is not initialized.` if not), regenerate prompt with the same `init` template (`# {role_name}\n\n{OPERATOR_PLACEHOLDER}\n\n## Default Prompt Seed\n\n{DEFAULT_PROMPT_SEED}`), overwrite `.juliet/<name>/prompt.md`, and print `prompt reset to default for role '<name>'` [5 pts] (blocked by #1)
 
 ## Clear History Command
 
