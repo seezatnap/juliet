@@ -21,8 +21,8 @@
 
 - [x] (#6) Add unit tests for parser coverage of `reset-prompt` and `clear-history`: valid argument forms, missing/invalid `--role` cases, and bad role name validation paths [5 pts] (blocked by #1) (C)
 - [x] (#7) Add unit tests for parser coverage of `exec`: explicit-role and implicit-role forms, engine parsing for `claude|codex`, `<message...>` joining behavior, and missing-arg/bad-role failures [5 pts] (blocked by #1) (B)
-- [ ] (#8) Add integration tests (existing `TestDir` pattern) for `reset-prompt` to verify `prompt.md` is overwritten with regenerated default template content and success output is correct [5 pts] (blocked by #2)
-- [ ] (#9) Add integration tests (existing `TestDir` pattern) for `clear-history` to verify target state files are emptied, `juliet-prompt.md` is removed if present, artifacts are cleared but directory/prompt are preserved, and success output is correct [5 pts] (blocked by #3)
+- [x] (#8) Add integration tests (existing `TestDir` pattern) for `reset-prompt` to verify `prompt.md` is overwritten with regenerated default template content and success output is correct [5 pts] (blocked by #2)
+- [x] (#9) Add integration tests (existing `TestDir` pattern) for `clear-history` to verify target state files are emptied, `juliet-prompt.md` is removed if present, artifacts are cleared but directory/prompt are preserved, and success output is correct [5 pts] (blocked by #3)
 - [ ] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5)
 
 ## Follow-up tasks (from sprint review)
@@ -33,6 +33,6 @@
 
 ## Follow-up tasks (from sprint review)
 - [B] (#15) Fix task #2 marker in tasks.md — it shows `[A]` (agent assignment) instead of `[x]`; the reset-prompt implementation is fully complete with unit and integration tests
-- [C] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint
+- [x] (#16) Mark tasks #8 and #9 as complete in tasks.md — integration tests for reset-prompt (6 tests) and clear-history (6 tests) were delivered in this sprint
 - [C] (#17) Mark tasks #11, #12, and #14 as complete in tasks.md — the tasks they describe (marking #1, #6, #7 complete) are already done
 - [ ] (#18) Update exec integration tests to verify non-interactive engine flags (`-p`/`-q`) once #5 is implemented — current tests assert interactive-mode args only (blocked by #5)
