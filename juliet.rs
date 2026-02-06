@@ -345,6 +345,41 @@ fn reset_prompt(
     Ok(())
 }
 
+fn clear_history(project_root: &Path, role_name: &str) -> Result<(), String> {
+    role_name::validate_role_name(role_name)?;
+
+    if !role_state::role_state_exists(project_root, role_name) {
+        return Err(format!("Role '{role_name}' is not initialized."));
+    }
+
+    role_state::clear_role_history(project_root, role_name).map_err(|err| {
+        format!("failed to clear history for role {role_name}: {err}")
+    })?;
+
+    Ok(())
+}
+
+fn run_clear_history_command(role_name: &str) -> i32 {
+    let cwd = match env::current_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("failed to get current directory: {err}");
+            return 1;
+        }
+    };
+
+    match clear_history(&cwd, role_name) {
+        Ok(()) => {
+            println!("history cleared for role '{role_name}'");
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
 fn run_reset_prompt_command(role_name: &str) -> i32 {
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
@@ -498,10 +533,7 @@ fn main() {
             operator_input,
         } => run_launch_command(role_name.as_deref(), engine, operator_input.as_deref()),
         CliCommand::ResetPrompt { role_name } => run_reset_prompt_command(&role_name),
-        CliCommand::ClearHistory { role_name } => {
-            eprintln!("clear-history not yet implemented for role '{role_name}'");
-            1
-        }
+        CliCommand::ClearHistory { role_name } => run_clear_history_command(&role_name),
         CliCommand::Exec {
             role_name: _,
             engine: _,
@@ -1393,6 +1425,137 @@ mod tests {
         );
     }
 
+    // clear_history unit tests
+
+    #[test]
+    fn clear_history_rejects_invalid_role_name() {
+        let temp = TestDir::new("clear-history-invalid-name");
+        let err = clear_history(temp.path(), "Invalid_Name")
+            .expect_err("invalid role name should fail");
+
+        assert_eq!(
+            err,
+            "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens."
+        );
+    }
+
+    #[test]
+    fn clear_history_fails_when_role_not_initialized() {
+        let temp = TestDir::new("clear-history-not-initialized");
+        let err = clear_history(temp.path(), "missing-role")
+            .expect_err("uninitialized role should fail");
+
+        assert_eq!(err, "Role 'missing-role' is not initialized.");
+    }
+
+    #[test]
+    fn clear_history_empties_state_files() {
+        let temp = TestDir::new("clear-history-empties-state");
+        let role_name = "director-of-engineering";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let role_dir = role_state::role_state_dir(temp.path(), role_name);
+        fs::write(role_dir.join("session.md"), "session data").expect("write session");
+        fs::write(
+            role_dir.join("needs-from-operator.md"),
+            "operator needs",
+        )
+        .expect("write needs");
+        fs::write(role_dir.join("projects.md"), "project data").expect("write projects");
+        fs::write(role_dir.join("processes.md"), "process data").expect("write processes");
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert_eq!(
+            fs::read_to_string(role_dir.join("session.md")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(role_dir.join("needs-from-operator.md")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(role_dir.join("projects.md")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(role_dir.join("processes.md")).unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn clear_history_deletes_juliet_prompt_md() {
+        let temp = TestDir::new("clear-history-deletes-runtime-prompt");
+        let role_name = "operations";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let runtime_path = role_state::runtime_prompt_path(temp.path(), role_name);
+        fs::write(&runtime_path, "runtime prompt content").expect("write runtime prompt");
+        assert!(runtime_path.exists());
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert!(!runtime_path.exists(), "juliet-prompt.md should be deleted");
+    }
+
+    #[test]
+    fn clear_history_succeeds_when_juliet_prompt_md_absent() {
+        let temp = TestDir::new("clear-history-no-runtime-prompt");
+        let role_name = "qa";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let runtime_path = role_state::runtime_prompt_path(temp.path(), role_name);
+        assert!(!runtime_path.exists());
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed without runtime prompt");
+    }
+
+    #[test]
+    fn clear_history_clears_artifacts_directory_contents() {
+        let temp = TestDir::new("clear-history-clears-artifacts");
+        let role_name = "engineering";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let artifacts_dir = role_state::role_state_dir(temp.path(), role_name).join("artifacts");
+        fs::write(artifacts_dir.join("report.txt"), "report content").expect("write artifact file");
+        fs::create_dir_all(artifacts_dir.join("subdir")).expect("create artifact subdir");
+        fs::write(artifacts_dir.join("subdir").join("nested.md"), "nested content")
+            .expect("write nested artifact");
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert!(artifacts_dir.is_dir(), "artifacts directory should be preserved");
+        assert_eq!(
+            fs::read_dir(&artifacts_dir).unwrap().count(),
+            0,
+            "artifacts directory should be empty"
+        );
+    }
+
+    #[test]
+    fn clear_history_preserves_prompt_md() {
+        let temp = TestDir::new("clear-history-preserves-prompt");
+        let role_name = "director-of-marketing";
+
+        initialize_role(temp.path(), role_name, "seed").expect("init should succeed");
+
+        let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
+        fs::write(&prompt_path, "# Custom prompt\n\nKeep this intact.")
+            .expect("write custom prompt");
+
+        clear_history(temp.path(), role_name).expect("clear_history should succeed");
+
+        assert_eq!(
+            fs::read_to_string(&prompt_path).unwrap(),
+            "# Custom prompt\n\nKeep this intact."
+        );
+    }
+
     #[cfg(unix)]
     mod cli_integration_tests {
         use super::*;
@@ -1915,6 +2078,197 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
                 fs::read_to_string(&session_path).expect("session should still exist"),
                 "important session data"
             );
+        }
+
+        // clear-history integration tests
+
+        #[test]
+        fn cli_clear_history_empties_state_and_prints_success() {
+            let temp = TestDir::new("integration-clear-history-success");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let role_dir = role_state::role_state_dir(&project_root, role_name);
+            fs::write(role_dir.join("session.md"), "session data")
+                .expect("session should be writable");
+            fs::write(role_dir.join("needs-from-operator.md"), "operator needs")
+                .expect("needs should be writable");
+            fs::write(role_dir.join("projects.md"), "project data")
+                .expect("projects should be writable");
+            fs::write(role_dir.join("processes.md"), "process data")
+                .expect("processes should be writable");
+
+            let runtime_path = role_state::runtime_prompt_path(&project_root, role_name);
+            fs::write(&runtime_path, "runtime prompt")
+                .expect("runtime prompt should be writable");
+
+            let artifacts_dir = role_dir.join("artifacts");
+            fs::write(artifacts_dir.join("report.txt"), "report content")
+                .expect("artifact should be writable");
+            fs::create_dir_all(artifacts_dir.join("subdir"))
+                .expect("artifact subdir should be created");
+            fs::write(artifacts_dir.join("subdir").join("nested.md"), "nested")
+                .expect("nested artifact should be writable");
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&prompt_path, "# Custom prompt\n\nKeep this.")
+                .expect("prompt should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                format!("history cleared for role '{role_name}'\n")
+            );
+            assert_eq!(output.stderr, "");
+
+            // State files should be empty
+            assert_eq!(
+                fs::read_to_string(role_dir.join("session.md")).unwrap(),
+                ""
+            );
+            assert_eq!(
+                fs::read_to_string(role_dir.join("needs-from-operator.md")).unwrap(),
+                ""
+            );
+            assert_eq!(
+                fs::read_to_string(role_dir.join("projects.md")).unwrap(),
+                ""
+            );
+            assert_eq!(
+                fs::read_to_string(role_dir.join("processes.md")).unwrap(),
+                ""
+            );
+
+            // Runtime prompt should be deleted
+            assert!(
+                !runtime_path.exists(),
+                "juliet-prompt.md should be deleted"
+            );
+
+            // Artifacts directory should be empty but still exist
+            assert!(artifacts_dir.is_dir(), "artifacts directory should be preserved");
+            assert_eq!(
+                fs::read_dir(&artifacts_dir).unwrap().count(),
+                0,
+                "artifacts directory should be empty"
+            );
+
+            // prompt.md should be preserved
+            assert_eq!(
+                fs::read_to_string(&prompt_path).unwrap(),
+                "# Custom prompt\n\nKeep this."
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_fails_when_role_not_initialized() {
+            let temp = TestDir::new("integration-clear-history-not-initialized");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", "missing-role"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Role 'missing-role' is not initialized.\n"
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_fails_with_invalid_role_name() {
+            let temp = TestDir::new("integration-clear-history-invalid-name");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", "Invalid_Name"],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, "");
+            assert_eq!(
+                output.stderr,
+                "Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens.\n"
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_without_role_prints_usage_and_exits_with_code_one() {
+            let temp = TestDir::new("integration-clear-history-usage");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["clear-history"], None);
+
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stdout, format!("{CLEAR_HISTORY_USAGE}\n"));
+            assert_eq!(output.stderr, "");
+        }
+
+        #[test]
+        fn cli_clear_history_preserves_prompt_md() {
+            let temp = TestDir::new("integration-clear-history-preserves-prompt");
+            let project_root = create_project_root(&temp);
+            let role_name = "operations";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let prompt_path = role_state::role_prompt_path(&project_root, role_name);
+            fs::write(&prompt_path, "# Custom operations prompt\n\nPreserve me.")
+                .expect("prompt should be writable");
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                fs::read_to_string(&prompt_path).unwrap(),
+                "# Custom operations prompt\n\nPreserve me."
+            );
+        }
+
+        #[test]
+        fn cli_clear_history_succeeds_when_no_runtime_prompt_exists() {
+            let temp = TestDir::new("integration-clear-history-no-runtime-prompt");
+            let project_root = create_project_root(&temp);
+            let role_name = "qa";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let runtime_path = role_state::runtime_prompt_path(&project_root, role_name);
+            assert!(!runtime_path.exists());
+
+            let output = run_cli(
+                &project_root,
+                &["clear-history", "--role", role_name],
+                None,
+            );
+
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(
+                output.stdout,
+                format!("history cleared for role '{role_name}'\n")
+            );
+            assert_eq!(output.stderr, "");
         }
     }
 }
