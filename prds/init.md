@@ -12,7 +12,7 @@ the user edits the tasks, or not. and says "okay, go for it. just one variation 
 
 juliet thinks: okay, let's run the sprint.
 
-runs `tmux new-session -d -s swarm-foo-feature-foo "swarm run --project foo --max-sprints 1 --target-branch feature/foo --no-tui"`
+runs `nohup swarm run --project foo --max-sprints 1 --target-branch feature/foo --no-tui > .juliet/artifacts/foo-feature-foo-swarm.log 2>&1 & echo $!`
 
 once done, juliet checks the tasks file. if tasks remain she says "here's the results: <pathtofiles>. if you're happy with them, i'll move on to the next sprint. if you're not, i'll help you edit the tasks." if all tasks are done she says "here's the results: <pathtofiles>. looks like everything's done - let me know if you'd like any changes."
 
@@ -22,7 +22,7 @@ juliet creates a new project called "sprint-1-followups" with new tasks based on
 
 `swarm project init sprint-1-followups --with-prd .juliet/artifacts/sprint-1-followups.md`
 
-`tmux new-session -d -s swarm-sprint-1-followups-feature-foo "swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/foo --no-tui"`
+`nohup swarm run --project sprint-1-followups --max-sprints 1 --target-branch feature/foo --no-tui > .juliet/artifacts/sprint-1-followups-feature-foo-swarm.log 2>&1 & echo $!`
 
 once done, she'll request another review, or ask if the user is ready to go on to the next sprint.
 
