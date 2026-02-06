@@ -2,7 +2,7 @@
 
 ## CLI Parsing & Usage
 
-- [A] (#1) Extend `CliCommand` and argument parsing to add `ResetPrompt { role_name }`, `ClearHistory { role_name }`, and `Exec { role_name: Option<String>, engine, message }`; support `reset-prompt --role <name>`, `clear-history --role <name>`, `exec --role <name> <claude|codex> <message...>`, and `exec <claude|codex> <message...>`; join remaining args into one message string; preserve existing validation/error behavior for missing args and bad role names; and update the top-level usage text in `juliet.rs` with all new command forms [5 pts]
+- [x] (#1) Extend `CliCommand` and argument parsing to add `ResetPrompt { role_name }`, `ClearHistory { role_name }`, and `Exec { role_name: Option<String>, engine, message }`; support `reset-prompt --role <name>`, `clear-history --role <name>`, `exec --role <name> <claude|codex> <message...>`, and `exec <claude|codex> <message...>`; join remaining args into one message string; preserve existing validation/error behavior for missing args and bad role names; and update the top-level usage text in `juliet.rs` with all new command forms [5 pts] (A)
 
 ## Reset Prompt Command
 
