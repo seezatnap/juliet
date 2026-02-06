@@ -43,6 +43,6 @@
 
 ## Follow-up tasks (from sprint review)
 - [x] (#21) Fix task #2 marker in tasks.md — it still shows `[A]` instead of `[x]`; three prior attempts (#15, #19, #20) all failed to actually change it
-- [B] (#22) Mark task #5 as complete in tasks.md — `run_claude_print`, `run_codex_quiet`, `run_engine_print`, and exit-code propagation were fully implemented and tested in commit `79b043c`
+- [x] (#22) Mark task #5 as complete in tasks.md — `run_claude_print`, `run_codex_quiet`, `run_engine_print`, and exit-code propagation were fully implemented and tested in commit `79b043c`
 - [B] (#23) Fix task #15 marker in tasks.md — it still shows `[B]` instead of `[x]`; task #20 claimed to fix it but did not
 - [B] (#24) Mark tasks #10 and #18 as complete in tasks.md — the exec integration tests they describe (non-interactive `-p`/`-q` flags, `IS_SANDBOX=1` env, prompt content, exit code propagation) were delivered in commit `79b043c` (blocked by #5)
