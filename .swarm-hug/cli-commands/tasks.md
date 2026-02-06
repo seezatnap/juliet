@@ -23,7 +23,7 @@
 - [x] (#7) Add unit tests for parser coverage of `exec`: explicit-role and implicit-role forms, engine parsing for `claude|codex`, `<message...>` joining behavior, and missing-arg/bad-role failures [5 pts] (blocked by #1) (B)
 - [x] (#8) Add integration tests (existing `TestDir` pattern) for `reset-prompt` to verify `prompt.md` is overwritten with regenerated default template content and success output is correct [5 pts] (blocked by #2) (A)
 - [x] (#9) Add integration tests (existing `TestDir` pattern) for `clear-history` to verify target state files are emptied, `juliet-prompt.md` is removed if present, artifacts are cleared but directory/prompt are preserved, and success output is correct [5 pts] (blocked by #3) (B)
-- [A] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5)
+- [x] (#10) Add integration tests (existing `TestDir` + `MockCodex` pattern) for `exec` to verify engine invocation uses `-p`/`-q` non-interactive flags and required safety flags/env, prompt content includes appended `User input` message, and command exit code matches engine exit code [5 pts] (blocked by #5)
 
 ## Follow-up tasks (from sprint review)
 - [x] (#11) Mark task #1 as complete in tasks.md — parsing for `ResetPrompt`, `ClearHistory`, and `Exec` is fully implemented with tests on the feature branch (blocked by #1) (A)
