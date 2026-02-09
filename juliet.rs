@@ -331,6 +331,13 @@ fn initialize_role(
     default_prompt_seed: &str,
 ) -> Result<InitOutcome, String> {
     role_name::validate_role_name(role_name)?;
+    let state_gitignore_path = role_state::state_gitignore_path(project_root);
+    role_state::ensure_state_gitignore(project_root).map_err(|err| {
+        format!(
+            "failed to initialize state gitignore at {}: {err}",
+            state_gitignore_path.display()
+        )
+    })?;
 
     let prompt_path = role_state::role_prompt_path(project_root, role_name);
     let prompt_exists = prompt_path.is_file();
@@ -1411,7 +1418,15 @@ mod tests {
         assert!(role_dir.join("needs-from-operator.md").is_file());
         assert!(role_dir.join("projects.md").is_file());
         assert!(role_dir.join("processes.md").is_file());
+        assert!(role_dir.join("learnings.md").is_file());
         assert!(role_dir.join("artifacts").is_dir());
+        let state_gitignore_path = role_state::state_gitignore_path(temp.path());
+        let state_gitignore = fs::read_to_string(state_gitignore_path)
+            .expect("state gitignore should be readable");
+        assert!(
+            state_gitignore.contains("!*/prompt.md"),
+            "state gitignore should keep role prompt files tracked"
+        );
     }
 
     #[test]
@@ -1442,6 +1457,29 @@ mod tests {
     }
 
     #[test]
+    fn initialize_role_repairs_missing_state_gitignore_even_when_role_already_exists() {
+        let temp = TestDir::new("repair-state-gitignore");
+        let role_name = "director-of-operations";
+
+        let first = initialize_role(temp.path(), role_name, "seed prompt")
+            .expect("first init should succeed");
+        assert_eq!(first, InitOutcome::Initialized);
+
+        let state_gitignore_path = role_state::state_gitignore_path(temp.path());
+        fs::remove_file(&state_gitignore_path).expect("state gitignore should be removable");
+
+        let second = initialize_role(temp.path(), role_name, "seed prompt")
+            .expect("second init should still succeed");
+        assert_eq!(second, InitOutcome::AlreadyExists);
+        let state_gitignore =
+            fs::read_to_string(state_gitignore_path).expect("state gitignore should be recreated");
+        assert!(
+            state_gitignore.contains("!*/prompt.md"),
+            "state gitignore should keep role prompt files tracked"
+        );
+    }
+
+    #[test]
     fn initialize_role_creates_missing_state_when_prompt_already_exists() {
         let temp = TestDir::new("prompt-only");
         let role_name = "operations";
@@ -1464,6 +1502,7 @@ mod tests {
         assert!(role_dir.join("needs-from-operator.md").is_file());
         assert!(role_dir.join("projects.md").is_file());
         assert!(role_dir.join("processes.md").is_file());
+        assert!(role_dir.join("learnings.md").is_file());
         assert!(role_dir.join("artifacts").is_dir());
     }
 
@@ -1637,6 +1676,7 @@ mod tests {
         .expect("write needs");
         fs::write(role_dir.join("projects.md"), "project data").expect("write projects");
         fs::write(role_dir.join("processes.md"), "process data").expect("write processes");
+        fs::write(role_dir.join("learnings.md"), "learning data").expect("write learnings");
 
         clear_history(temp.path(), role_name).expect("clear_history should succeed");
 
@@ -1654,6 +1694,10 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(role_dir.join("processes.md")).unwrap(),
+            ""
+        );
+        assert_eq!(
+            fs::read_to_string(role_dir.join("learnings.md")).unwrap(),
             ""
         );
     }
@@ -2210,11 +2254,27 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(first.exit_code, 0);
             assert_eq!(first.stdout, format!("Initialized role: {role_name}\n"));
             assert_eq!(first.stderr, "");
+            let state_gitignore_path = role_state::state_gitignore_path(&project_root);
+            let first_state_gitignore = fs::read_to_string(&state_gitignore_path)
+                .expect("state gitignore should exist after init");
+            assert!(
+                first_state_gitignore.contains("!*/prompt.md"),
+                "state gitignore should keep role prompt files tracked"
+            );
+
+            fs::remove_file(&state_gitignore_path)
+                .expect("state gitignore should be removable for repair test");
 
             let second = run_cli(&project_root, &["init", "--role", role_name], None);
             assert_eq!(second.exit_code, 0);
             assert_eq!(second.stdout, format!("Role already exists: {role_name}\n"));
             assert_eq!(second.stderr, "");
+            let second_state_gitignore = fs::read_to_string(state_gitignore_path)
+                .expect("state gitignore should be recreated on repeated init");
+            assert!(
+                second_state_gitignore.contains("!*/prompt.md"),
+                "state gitignore should keep role prompt files tracked"
+            );
         }
 
         #[test]
@@ -2575,6 +2635,8 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                 .expect("projects should be writable");
             fs::write(role_dir.join("processes.md"), "process data")
                 .expect("processes should be writable");
+            fs::write(role_dir.join("learnings.md"), "learning data")
+                .expect("learnings should be writable");
 
             let runtime_path = role_state::runtime_prompt_path(&project_root, role_name);
             fs::write(&runtime_path, "runtime prompt")
@@ -2620,6 +2682,10 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
             assert_eq!(
                 fs::read_to_string(role_dir.join("processes.md")).unwrap(),
+                ""
+            );
+            assert_eq!(
+                fs::read_to_string(role_dir.join("learnings.md")).unwrap(),
                 ""
             );
 

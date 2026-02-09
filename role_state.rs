@@ -6,13 +6,16 @@ use std::path::{Path, PathBuf};
 
 const JULIET_STATE_DIR: &str = ".juliet";
 const ARTIFACTS_DIR: &str = "artifacts";
+const STATE_GITIGNORE_FILE: &str = ".gitignore";
+const STATE_GITIGNORE_CONTENTS: &str = "# Managed by juliet: keep role prompt customizations, ignore runtime state.\n*\n!.gitignore\n!*/\n!*/prompt.md\n";
 const PROMPT_FILE: &str = "prompt.md";
 const RUNTIME_PROMPT_FILE: &str = "juliet-prompt.md";
-const STATE_FILES: [&str; 4] = [
+const STATE_FILES: [&str; 5] = [
     "session.md",
     "needs-from-operator.md",
     "projects.md",
     "processes.md",
+    "learnings.md",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,6 +26,10 @@ pub struct ConfiguredRole {
 
 pub fn role_state_dir(project_root: &Path, role_name: &str) -> PathBuf {
     project_root.join(JULIET_STATE_DIR).join(role_name)
+}
+
+pub fn state_gitignore_path(project_root: &Path) -> PathBuf {
+    project_root.join(JULIET_STATE_DIR).join(STATE_GITIGNORE_FILE)
 }
 
 pub fn role_prompt_path(project_root: &Path, role_name: &str) -> PathBuf {
@@ -42,6 +49,8 @@ pub fn role_state_is_scaffolded(project_root: &Path, role_name: &str) -> bool {
 }
 
 pub fn create_role_state(project_root: &Path, role_name: &str) -> io::Result<()> {
+    ensure_state_gitignore(project_root)?;
+
     let role_dir = role_state_dir(project_root, role_name);
     fs::create_dir_all(role_dir.join(ARTIFACTS_DIR))?;
 
@@ -50,6 +59,12 @@ pub fn create_role_state(project_root: &Path, role_name: &str) -> io::Result<()>
     }
 
     Ok(())
+}
+
+pub fn ensure_state_gitignore(project_root: &Path) -> io::Result<()> {
+    let state_root = project_root.join(JULIET_STATE_DIR);
+    fs::create_dir_all(&state_root)?;
+    fs::write(state_gitignore_path(project_root), STATE_GITIGNORE_CONTENTS)
 }
 
 pub fn discover_configured_roles(project_root: &Path) -> io::Result<Vec<ConfiguredRole>> {
@@ -210,6 +225,11 @@ mod tests {
                 file
             );
         }
+        assert_eq!(
+            fs::read_to_string(state_gitignore_path(temp.path()))
+                .expect("state gitignore should be readable"),
+            STATE_GITIGNORE_CONTENTS
+        );
 
         assert_eq!(
             runtime_prompt_path(temp.path(), role_name),
@@ -241,6 +261,10 @@ mod tests {
                 .join(role_name)
                 .join(RUNTIME_PROMPT_FILE)
         );
+        assert_eq!(
+            state_gitignore_path(temp.path()),
+            temp.path().join(JULIET_STATE_DIR).join(STATE_GITIGNORE_FILE)
+        );
     }
 
     #[test]
@@ -256,6 +280,22 @@ mod tests {
 
         let contents = fs::read_to_string(session_path).expect("session.md should remain readable");
         assert_eq!(contents, "cached session contents");
+    }
+
+    #[test]
+    fn ensure_state_gitignore_rewrites_customized_contents_to_expected_template() {
+        let temp = TestDir::new("state-gitignore");
+        let role_name = "director-of-product";
+        create_role_state(temp.path(), role_name).expect("initial scaffold should succeed");
+
+        let gitignore_path = state_gitignore_path(temp.path());
+        fs::write(&gitignore_path, "custom\n").expect("customized gitignore should be writable");
+
+        ensure_state_gitignore(temp.path()).expect("gitignore should be restored");
+        assert_eq!(
+            fs::read_to_string(gitignore_path).expect("state gitignore should be readable"),
+            STATE_GITIGNORE_CONTENTS
+        );
     }
 
     #[test]
