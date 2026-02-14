@@ -7,15 +7,17 @@ use std::process::Command;
 mod role_name;
 mod role_state;
 
-const GENERAL_USAGE: &str = "Usage: juliet <command> [options]\n\nCommands:\n  Initialize a new role:\n    juliet init --role <name>\n\n  Launch a specific role:\n    juliet --role <name> <claude|codex>\n\n  Launch (auto-selects role when only one exists):\n    juliet <claude|codex>\n\n  Reset a role's prompt to default:\n    juliet reset-prompt --role <name>\n\n  Clear a role's history:\n    juliet clear-history --role <name>\n\n  Execute a single non-interactive turn:\n    juliet exec --role <name> <claude|codex> <message...>\n    juliet exec <claude|codex> <message...>";
-const INIT_USAGE: &str = "Usage: juliet init --role <name>";
-const RESET_PROMPT_USAGE: &str = "Usage: juliet reset-prompt --role <name>";
-const CLEAR_HISTORY_USAGE: &str = "Usage: juliet clear-history --role <name>";
-const EXEC_USAGE: &str = "Usage: juliet exec [--role <name>] <claude|codex> <message...>";
+const GENERAL_USAGE: &str = "Usage: juliet <command> [options]\n\nCommands:\n  Initialize a new role:\n    juliet init --project <name>\n\n  Launch a specific role:\n    juliet --project <name> <claude|codex>\n\n  Launch (auto-selects role when only one exists):\n    juliet <claude|codex>\n\n  Reset a role's prompt to default:\n    juliet reset-prompt --project <name>\n\n  Clear a role's history:\n    juliet clear-history --project <name>\n\n  Execute a single non-interactive turn:\n    juliet exec --project <name> <claude|codex> <message...>\n    juliet exec <claude|codex> <message...>\n\nOption alias:\n  --role <name>  Alias for --project <name> (backward compatibility)";
+const INIT_USAGE: &str = "Usage: juliet init --project <name> (alias: --role <name>)";
+const RESET_PROMPT_USAGE: &str =
+    "Usage: juliet reset-prompt --project <name> (alias: --role <name>)";
+const CLEAR_HISTORY_USAGE: &str =
+    "Usage: juliet clear-history --project <name> (alias: --role <name>)";
+const EXEC_USAGE: &str =
+    "Usage: juliet exec [--project <name>] <claude|codex> <message...> (alias: --role <name>)";
 const DEFAULT_PROMPT_SEED: &str = include_str!("prompts/juliet.md");
-const NO_ROLES_CONFIGURED_ERROR: &str = "No roles configured. Run: juliet init --role <name>";
-const MULTIPLE_ROLES_FOUND_ERROR: &str =
-    "Multiple roles found. Specify one with --role <name>:";
+const NO_ROLES_CONFIGURED_ERROR: &str = "No roles configured. Run: juliet init --project <name>";
+const MULTIPLE_ROLES_FOUND_ERROR: &str = "Multiple roles found. Specify one with --project <name>:";
 const OPERATOR_PLACEHOLDER: &str =
     "<!-- TODO: Replace with role-specific instructions and expected operator input. -->";
 
@@ -95,13 +97,17 @@ fn parse_cli_command(args: &[String]) -> Result<CliCommand, CliError> {
         "reset-prompt" => parse_reset_prompt_command(args),
         "clear-history" => parse_clear_history_command(args),
         "exec" => parse_exec_command(args),
-        "--role" => parse_explicit_role_launch(args),
+        option if is_project_option(option) => parse_explicit_role_launch(args),
         _ => parse_implicit_role_launch(args),
     }
 }
 
+fn is_project_option(option: &str) -> bool {
+    option == "--project" || option == "--role"
+}
+
 fn parse_init_command(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 3 || args[1] != "--role" {
+    if args.len() != 3 || !is_project_option(&args[1]) {
         return Err(CliError::InitUsage);
     }
 
@@ -111,7 +117,7 @@ fn parse_init_command(args: &[String]) -> Result<CliCommand, CliError> {
 }
 
 fn parse_reset_prompt_command(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 3 || args[1] != "--role" {
+    if args.len() != 3 || !is_project_option(&args[1]) {
         return Err(CliError::ResetPromptUsage);
     }
 
@@ -121,7 +127,7 @@ fn parse_reset_prompt_command(args: &[String]) -> Result<CliCommand, CliError> {
 }
 
 fn parse_clear_history_command(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 3 || args[1] != "--role" {
+    if args.len() != 3 || !is_project_option(&args[1]) {
         return Err(CliError::ClearHistoryUsage);
     }
 
@@ -136,8 +142,8 @@ fn parse_exec_command(args: &[String]) -> Result<CliCommand, CliError> {
         return Err(CliError::ExecUsage);
     }
 
-    if args[1] == "--role" {
-        // exec --role <name> <engine> <message...>
+    if is_project_option(&args[1]) {
+        // exec --project <name> <engine> <message...>
         if args.len() < 5 {
             return Err(CliError::ExecUsage);
         }
@@ -338,6 +344,13 @@ fn initialize_role(
             state_gitignore_path.display()
         )
     })?;
+    let shared_learnings_path = role_state::shared_learnings_path(project_root);
+    role_state::ensure_shared_learnings(project_root).map_err(|err| {
+        format!(
+            "failed to initialize shared learnings at {}: {err}",
+            shared_learnings_path.display()
+        )
+    })?;
 
     let prompt_path = role_state::role_prompt_path(project_root, role_name);
     let prompt_exists = prompt_path.is_file();
@@ -389,9 +402,8 @@ fn clear_history(project_root: &Path, role_name: &str) -> Result<(), String> {
         return Err(format!("Role '{role_name}' is not initialized."));
     }
 
-    role_state::clear_role_history(project_root, role_name).map_err(|err| {
-        format!("failed to clear history for role {role_name}: {err}")
-    })?;
+    role_state::clear_role_history(project_root, role_name)
+        .map_err(|err| format!("failed to clear history for role {role_name}: {err}"))?;
 
     Ok(())
 }
@@ -468,7 +480,7 @@ fn stage_explicit_role_prompt(project_root: &Path, role_name: &str) -> Result<St
 
     if !role_state::role_state_exists(project_root, role_name) {
         return Err(format!(
-            "Role not found: {role_name}. Run: juliet init --role {role_name}"
+            "Role not found: {role_name}. Run: juliet init --project {role_name}"
         ));
     }
 
@@ -541,7 +553,11 @@ where
     }
 }
 
-fn run_launch_command(role_name: Option<&str>, engine: Engine, operator_input: Option<&str>) -> i32 {
+fn run_launch_command(
+    role_name: Option<&str>,
+    engine: Engine,
+    operator_input: Option<&str>,
+) -> i32 {
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
         Err(err) => {
@@ -665,7 +681,17 @@ mod tests {
     }
 
     #[test]
-    fn parses_init_with_role() {
+    fn parses_init_with_project() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["init", "--project", "director-of-engineering"])),
+            Ok(CliCommand::Init {
+                role_name: "director-of-engineering".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_init_with_role_alias() {
         assert_eq!(
             parse_cli_command(&to_args(&["init", "--role", "director-of-engineering"])),
             Ok(CliCommand::Init {
@@ -675,7 +701,19 @@ mod tests {
     }
 
     #[test]
-    fn parses_explicit_role_launch() {
+    fn parses_explicit_role_launch_with_project_option() {
+        assert_eq!(
+            parse_cli_command(&to_args(&["--project", "director-of-engineering", "codex"])),
+            Ok(CliCommand::Launch {
+                role_name: Some("director-of-engineering".to_string()),
+                engine: Engine::Codex,
+                operator_input: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_explicit_role_launch_with_role_alias() {
         assert_eq!(
             parse_cli_command(&to_args(&["--role", "director-of-engineering", "codex"])),
             Ok(CliCommand::Launch {
@@ -702,7 +740,7 @@ mod tests {
     fn parses_explicit_role_launch_with_operator_input() {
         assert_eq!(
             parse_cli_command(&to_args(&[
-                "--role",
+                "--project",
                 "director-of-engineering",
                 "codex",
                 "start",
@@ -732,9 +770,27 @@ mod tests {
     // reset-prompt parsing tests
 
     #[test]
-    fn parses_reset_prompt_with_role() {
+    fn parses_reset_prompt_with_project() {
         assert_eq!(
-            parse_cli_command(&to_args(&["reset-prompt", "--role", "director-of-engineering"])),
+            parse_cli_command(&to_args(&[
+                "reset-prompt",
+                "--project",
+                "director-of-engineering",
+            ])),
+            Ok(CliCommand::ResetPrompt {
+                role_name: "director-of-engineering".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_reset_prompt_with_role_alias() {
+        assert_eq!(
+            parse_cli_command(&to_args(&[
+                "reset-prompt",
+                "--role",
+                "director-of-engineering"
+            ])),
             Ok(CliCommand::ResetPrompt {
                 role_name: "director-of-engineering".to_string()
             })
@@ -757,8 +813,8 @@ mod tests {
 
     #[test]
     fn reset_prompt_usage_error_when_extra_args() {
-        let error =
-            parse_cli_command(&to_args(&["reset-prompt", "--role", "my-role", "extra"])).unwrap_err();
+        let error = parse_cli_command(&to_args(&["reset-prompt", "--role", "my-role", "extra"]))
+            .unwrap_err();
         assert_eq!(error, CliError::ResetPromptUsage);
     }
 
@@ -827,9 +883,27 @@ mod tests {
     // clear-history parsing tests
 
     #[test]
-    fn parses_clear_history_with_role() {
+    fn parses_clear_history_with_project() {
         assert_eq!(
-            parse_cli_command(&to_args(&["clear-history", "--role", "director-of-engineering"])),
+            parse_cli_command(&to_args(&[
+                "clear-history",
+                "--project",
+                "director-of-engineering",
+            ])),
+            Ok(CliCommand::ClearHistory {
+                role_name: "director-of-engineering".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_clear_history_with_role_alias() {
+        assert_eq!(
+            parse_cli_command(&to_args(&[
+                "clear-history",
+                "--role",
+                "director-of-engineering"
+            ])),
             Ok(CliCommand::ClearHistory {
                 role_name: "director-of-engineering".to_string()
             })
@@ -852,8 +926,8 @@ mod tests {
 
     #[test]
     fn clear_history_usage_error_when_extra_args() {
-        let error =
-            parse_cli_command(&to_args(&["clear-history", "--role", "my-role", "extra"])).unwrap_err();
+        let error = parse_cli_command(&to_args(&["clear-history", "--role", "my-role", "extra"]))
+            .unwrap_err();
         assert_eq!(error, CliError::ClearHistoryUsage);
     }
 
@@ -922,10 +996,16 @@ mod tests {
     // exec parsing tests
 
     #[test]
-    fn parses_exec_with_explicit_role_and_claude() {
+    fn parses_exec_with_explicit_project_and_claude() {
         assert_eq!(
             parse_cli_command(&to_args(&[
-                "exec", "--role", "my-role", "claude", "do", "the", "thing"
+                "exec",
+                "--project",
+                "my-role",
+                "claude",
+                "do",
+                "the",
+                "thing"
             ])),
             Ok(CliCommand::Exec {
                 role_name: Some("my-role".to_string()),
@@ -936,7 +1016,27 @@ mod tests {
     }
 
     #[test]
-    fn parses_exec_with_explicit_role_and_codex() {
+    fn parses_exec_with_explicit_project_and_codex() {
+        assert_eq!(
+            parse_cli_command(&to_args(&[
+                "exec",
+                "--project",
+                "my-role",
+                "codex",
+                "fix",
+                "the",
+                "bug"
+            ])),
+            Ok(CliCommand::Exec {
+                role_name: Some("my-role".to_string()),
+                engine: Engine::Codex,
+                message: "fix the bug".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_exec_with_explicit_role_alias_and_codex() {
         assert_eq!(
             parse_cli_command(&to_args(&[
                 "exec", "--role", "my-role", "codex", "fix", "the", "bug"
@@ -988,7 +1088,13 @@ mod tests {
     #[test]
     fn parses_exec_explicit_role_with_single_word_message() {
         assert_eq!(
-            parse_cli_command(&to_args(&["exec", "--role", "my-role", "codex", "hello"])),
+            parse_cli_command(&to_args(&[
+                "exec",
+                "--project",
+                "my-role",
+                "codex",
+                "hello"
+            ])),
             Ok(CliCommand::Exec {
                 role_name: Some("my-role".to_string()),
                 engine: Engine::Codex,
@@ -1045,9 +1151,8 @@ mod tests {
 
     #[test]
     fn exec_usage_error_when_invalid_engine_explicit() {
-        let error =
-            parse_cli_command(&to_args(&["exec", "--role", "my-role", "invalid", "hello"]))
-                .unwrap_err();
+        let error = parse_cli_command(&to_args(&["exec", "--role", "my-role", "invalid", "hello"]))
+            .unwrap_err();
         assert_eq!(error, CliError::ExecUsage);
     }
 
@@ -1069,9 +1174,8 @@ mod tests {
     fn exec_parser_passes_through_invalid_role_names() {
         // The parser does not validate role names; validation is deferred to execution.
         for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
-            let result = parse_cli_command(&to_args(&[
-                "exec", "--role", bad_name, "claude", "hello",
-            ]));
+            let result =
+                parse_cli_command(&to_args(&["exec", "--role", bad_name, "claude", "hello"]));
             assert_eq!(
                 result,
                 Ok(CliCommand::Exec {
@@ -1104,7 +1208,8 @@ mod tests {
             let error_implicit =
                 parse_cli_command(&to_args(&["exec", invalid_engine, "hello"])).unwrap_err();
             assert_eq!(
-                error_implicit, CliError::ExecUsage,
+                error_implicit,
+                CliError::ExecUsage,
                 "implicit form should reject engine '{invalid_engine}'"
             );
 
@@ -1117,7 +1222,8 @@ mod tests {
             ]))
             .unwrap_err();
             assert_eq!(
-                error_explicit, CliError::ExecUsage,
+                error_explicit,
+                CliError::ExecUsage,
                 "explicit form should reject engine '{invalid_engine}'"
             );
         }
@@ -1131,8 +1237,7 @@ mod tests {
         let error = parse_cli_command(&to_args(&["exec", "claude"])).unwrap_err();
         assert_eq!(error.message(), EXEC_USAGE);
 
-        let error =
-            parse_cli_command(&to_args(&["exec", "--role", "my-role"])).unwrap_err();
+        let error = parse_cli_command(&to_args(&["exec", "--role", "my-role"])).unwrap_err();
         assert_eq!(error.message(), EXEC_USAGE);
     }
 
@@ -1171,7 +1276,8 @@ mod tests {
 
     #[test]
     fn usage_error_when_explicit_role_launch_is_missing_engine() {
-        let error = parse_cli_command(&to_args(&["--role", "director-of-engineering"])).unwrap_err();
+        let error =
+            parse_cli_command(&to_args(&["--role", "director-of-engineering"])).unwrap_err();
         assert_eq!(error, CliError::Usage);
         assert_eq!(error.message(), GENERAL_USAGE);
     }
@@ -1185,7 +1291,7 @@ mod tests {
 
         assert_eq!(
             err,
-            "Role not found: missing-role. Run: juliet init --role missing-role"
+            "Role not found: missing-role. Run: juliet init --project missing-role"
         );
     }
 
@@ -1380,7 +1486,7 @@ mod tests {
             .expect_err("multiple configured roles should require explicit selection");
         assert_eq!(
             err,
-            "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team"
+            "Multiple roles found. Specify one with --project <name>:\nalpha-team\nzeta-team"
         );
     }
 
@@ -1418,11 +1524,11 @@ mod tests {
         assert!(role_dir.join("needs-from-operator.md").is_file());
         assert!(role_dir.join("projects.md").is_file());
         assert!(role_dir.join("processes.md").is_file());
-        assert!(role_dir.join("learnings.md").is_file());
         assert!(role_dir.join("artifacts").is_dir());
+        assert!(role_state::shared_learnings_path(temp.path()).is_file());
         let state_gitignore_path = role_state::state_gitignore_path(temp.path());
-        let state_gitignore = fs::read_to_string(state_gitignore_path)
-            .expect("state gitignore should be readable");
+        let state_gitignore =
+            fs::read_to_string(state_gitignore_path).expect("state gitignore should be readable");
         assert!(
             state_gitignore.contains("!*/prompt.md"),
             "state gitignore should keep role prompt files tracked"
@@ -1480,12 +1586,37 @@ mod tests {
     }
 
     #[test]
+    fn initialize_role_repairs_missing_shared_learnings_even_when_role_already_exists() {
+        let temp = TestDir::new("repair-shared-learnings");
+        let role_name = "director-of-operations";
+
+        let first = initialize_role(temp.path(), role_name, "seed prompt")
+            .expect("first init should succeed");
+        assert_eq!(first, InitOutcome::Initialized);
+
+        let shared_learnings_path = role_state::shared_learnings_path(temp.path());
+        fs::remove_file(&shared_learnings_path).expect("shared learnings should be removable");
+
+        let second = initialize_role(temp.path(), role_name, "seed prompt")
+            .expect("second init should still succeed");
+        assert_eq!(second, InitOutcome::AlreadyExists);
+        assert!(
+            shared_learnings_path.is_file(),
+            "shared learnings file should be recreated on repeated init"
+        );
+    }
+
+    #[test]
     fn initialize_role_creates_missing_state_when_prompt_already_exists() {
         let temp = TestDir::new("prompt-only");
         let role_name = "operations";
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::create_dir_all(prompt_path.parent().expect("prompt parent dir should exist"))
-            .expect("prompt parent directory should be created");
+        fs::create_dir_all(
+            prompt_path
+                .parent()
+                .expect("prompt parent dir should exist"),
+        )
+        .expect("prompt parent directory should be created");
         fs::write(&prompt_path, "# custom operations prompt").expect("prompt should be created");
 
         let outcome = initialize_role(temp.path(), role_name, "seed prompt")
@@ -1502,8 +1633,8 @@ mod tests {
         assert!(role_dir.join("needs-from-operator.md").is_file());
         assert!(role_dir.join("projects.md").is_file());
         assert!(role_dir.join("processes.md").is_file());
-        assert!(role_dir.join("learnings.md").is_file());
         assert!(role_dir.join("artifacts").is_dir());
+        assert!(role_state::shared_learnings_path(temp.path()).is_file());
     }
 
     #[test]
@@ -1604,8 +1735,11 @@ mod tests {
         initialize_role(temp.path(), role_name, seed).expect("init should succeed");
 
         let prompt_path = role_state::role_prompt_path(temp.path(), role_name);
-        fs::write(&prompt_path, "# Custom modified prompt\n\nUser changes here.")
-            .expect("prompt should be writable");
+        fs::write(
+            &prompt_path,
+            "# Custom modified prompt\n\nUser changes here.",
+        )
+        .expect("prompt should be writable");
 
         reset_prompt(temp.path(), role_name, seed).expect("reset_prompt should succeed");
 
@@ -1642,8 +1776,8 @@ mod tests {
     #[test]
     fn clear_history_rejects_invalid_role_name() {
         let temp = TestDir::new("clear-history-invalid-name");
-        let err = clear_history(temp.path(), "Invalid_Name")
-            .expect_err("invalid role name should fail");
+        let err =
+            clear_history(temp.path(), "Invalid_Name").expect_err("invalid role name should fail");
 
         assert_eq!(
             err,
@@ -1654,8 +1788,8 @@ mod tests {
     #[test]
     fn clear_history_fails_when_role_not_initialized() {
         let temp = TestDir::new("clear-history-not-initialized");
-        let err = clear_history(temp.path(), "missing-role")
-            .expect_err("uninitialized role should fail");
+        let err =
+            clear_history(temp.path(), "missing-role").expect_err("uninitialized role should fail");
 
         assert_eq!(err, "Role 'missing-role' is not initialized.");
     }
@@ -1669,21 +1803,15 @@ mod tests {
 
         let role_dir = role_state::role_state_dir(temp.path(), role_name);
         fs::write(role_dir.join("session.md"), "session data").expect("write session");
-        fs::write(
-            role_dir.join("needs-from-operator.md"),
-            "operator needs",
-        )
-        .expect("write needs");
+        fs::write(role_dir.join("needs-from-operator.md"), "operator needs").expect("write needs");
         fs::write(role_dir.join("projects.md"), "project data").expect("write projects");
         fs::write(role_dir.join("processes.md"), "process data").expect("write processes");
-        fs::write(role_dir.join("learnings.md"), "learning data").expect("write learnings");
+        let shared_learnings_path = role_state::shared_learnings_path(temp.path());
+        fs::write(&shared_learnings_path, "learning data").expect("write shared learnings");
 
         clear_history(temp.path(), role_name).expect("clear_history should succeed");
 
-        assert_eq!(
-            fs::read_to_string(role_dir.join("session.md")).unwrap(),
-            ""
-        );
+        assert_eq!(fs::read_to_string(role_dir.join("session.md")).unwrap(), "");
         assert_eq!(
             fs::read_to_string(role_dir.join("needs-from-operator.md")).unwrap(),
             ""
@@ -1697,8 +1825,8 @@ mod tests {
             ""
         );
         assert_eq!(
-            fs::read_to_string(role_dir.join("learnings.md")).unwrap(),
-            ""
+            fs::read_to_string(shared_learnings_path).unwrap(),
+            "learning data"
         );
     }
 
@@ -1728,7 +1856,8 @@ mod tests {
         let runtime_path = role_state::runtime_prompt_path(temp.path(), role_name);
         assert!(!runtime_path.exists());
 
-        clear_history(temp.path(), role_name).expect("clear_history should succeed without runtime prompt");
+        clear_history(temp.path(), role_name)
+            .expect("clear_history should succeed without runtime prompt");
     }
 
     #[test]
@@ -1741,12 +1870,18 @@ mod tests {
         let artifacts_dir = role_state::role_state_dir(temp.path(), role_name).join("artifacts");
         fs::write(artifacts_dir.join("report.txt"), "report content").expect("write artifact file");
         fs::create_dir_all(artifacts_dir.join("subdir")).expect("create artifact subdir");
-        fs::write(artifacts_dir.join("subdir").join("nested.md"), "nested content")
-            .expect("write nested artifact");
+        fs::write(
+            artifacts_dir.join("subdir").join("nested.md"),
+            "nested content",
+        )
+        .expect("write nested artifact");
 
         clear_history(temp.path(), role_name).expect("clear_history should succeed");
 
-        assert!(artifacts_dir.is_dir(), "artifacts directory should be preserved");
+        assert!(
+            artifacts_dir.is_dir(),
+            "artifacts directory should be preserved"
+        );
         assert_eq!(
             fs::read_dir(&artifacts_dir).unwrap().count(),
             0,
@@ -1781,8 +1916,11 @@ mod tests {
         let role_name = "director-of-engineering";
         let role_prompt = "# Exec prompt\n\nDo role work.";
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
-        fs::write(role_state::role_prompt_path(temp.path(), role_name), role_prompt)
-            .expect("role prompt should be written");
+        fs::write(
+            role_state::role_prompt_path(temp.path(), role_name),
+            role_prompt,
+        )
+        .expect("role prompt should be written");
 
         let mut captured_engine = None;
         let mut captured_prompt = String::new();
@@ -1818,8 +1956,11 @@ mod tests {
         let role_name = "director-of-engineering";
         let role_prompt = "# Implicit exec prompt\n\nDo role work.";
         role_state::create_role_state(temp.path(), role_name).expect("role state should exist");
-        fs::write(role_state::role_prompt_path(temp.path(), role_name), role_prompt)
-            .expect("role prompt should be written");
+        fs::write(
+            role_state::role_prompt_path(temp.path(), role_name),
+            role_prompt,
+        )
+        .expect("role prompt should be written");
 
         let mut captured_engine = None;
         let mut captured_prompt = String::new();
@@ -2166,22 +2307,19 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             if let Some(mock) = mock_codex {
                 path_dirs.push(mock.bin_dir.display().to_string());
                 command.env("JULIET_TEST_CODEX_ARGS_FILE", &mock.args_file);
-                command.env(
-                    "JULIET_TEST_CODEX_EXIT_CODE",
-                    mock.exit_code.to_string(),
-                );
+                command.env("JULIET_TEST_CODEX_EXIT_CODE", mock.exit_code.to_string());
             }
 
             if let Some(mock) = mock_claude {
-                if !path_dirs.iter().any(|d| d == &mock.bin_dir.display().to_string()) {
+                if !path_dirs
+                    .iter()
+                    .any(|d| d == &mock.bin_dir.display().to_string())
+                {
                     path_dirs.push(mock.bin_dir.display().to_string());
                 }
                 command.env("JULIET_TEST_CLAUDE_ARGS_FILE", &mock.args_file);
                 command.env("JULIET_TEST_CLAUDE_ENV_FILE", &mock.env_file);
-                command.env(
-                    "JULIET_TEST_CLAUDE_EXIT_CODE",
-                    mock.exit_code.to_string(),
-                );
+                command.env("JULIET_TEST_CLAUDE_EXIT_CODE", mock.exit_code.to_string());
             }
 
             if !path_dirs.is_empty() {
@@ -2234,7 +2372,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let temp = TestDir::new("integration-init-empty-role");
             let project_root = create_project_root(&temp);
 
-            let output = run_cli(&project_root, &["init", "--role", ""], None);
+            let output = run_cli(&project_root, &["init", "--project", ""], None);
 
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stdout, "");
@@ -2250,7 +2388,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let project_root = create_project_root(&temp);
             let role_name = "director-of-engineering";
 
-            let first = run_cli(&project_root, &["init", "--role", role_name], None);
+            let first = run_cli(&project_root, &["init", "--project", role_name], None);
             assert_eq!(first.exit_code, 0);
             assert_eq!(first.stdout, format!("Initialized role: {role_name}\n"));
             assert_eq!(first.stderr, "");
@@ -2265,7 +2403,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             fs::remove_file(&state_gitignore_path)
                 .expect("state gitignore should be removable for repair test");
 
-            let second = run_cli(&project_root, &["init", "--role", role_name], None);
+            let second = run_cli(&project_root, &["init", "--project", role_name], None);
             assert_eq!(second.exit_code, 0);
             assert_eq!(second.stdout, format!("Role already exists: {role_name}\n"));
             assert_eq!(second.stderr, "");
@@ -2291,14 +2429,20 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             let legacy_role_dir = role_state::role_state_dir(&project_root, role_name);
             fs::create_dir_all(&legacy_role_dir).expect("legacy artifacts directory should exist");
-            fs::write(legacy_role_dir.join("existing-artifact.md"), "legacy artifact")
-                .expect("legacy artifact file should be writable");
+            fs::write(
+                legacy_role_dir.join("existing-artifact.md"),
+                "legacy artifact",
+            )
+            .expect("legacy artifact file should be writable");
 
-            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            let init = run_cli(&project_root, &["init", "--project", role_name], None);
             assert_eq!(init.exit_code, 0);
             assert_eq!(init.stdout, format!("Initialized role: {role_name}\n"));
             assert_eq!(init.stderr, "");
-            assert!(role_state::role_state_is_scaffolded(&project_root, role_name));
+            assert!(role_state::role_state_is_scaffolded(
+                &project_root,
+                role_name
+            ));
 
             let mock_codex = MockCodex::new(temp.path(), 0);
             let launch = run_cli(&project_root, &["codex"], Some(&mock_codex));
@@ -2330,7 +2474,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let mock_codex = MockCodex::new(temp.path(), 0);
             let launch = run_cli(
                 &project_root,
-                &["--role", role_name, "codex"],
+                &["--project", role_name, "codex"],
                 Some(&mock_codex),
             );
 
@@ -2362,7 +2506,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(output.stdout, "");
             assert_eq!(
                 output.stderr,
-                "Role not found: missing-role. Run: juliet init --role missing-role\n"
+                "Role not found: missing-role. Run: juliet init --project missing-role\n"
             );
         }
 
@@ -2396,7 +2540,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(output.stdout, "");
             assert_eq!(
                 output.stderr,
-                "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team\n"
+                "Multiple roles found. Specify one with --project <name>:\nalpha-team\nzeta-team\n"
             );
         }
 
@@ -2407,10 +2551,13 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let role_name = "director-of-engineering";
             let role_prompt = "# Implicit role prompt\n\nRun the implicit role workflow.";
 
-            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            let init = run_cli(&project_root, &["init", "--project", role_name], None);
             assert_eq!(init.exit_code, 0);
-            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
-                .expect("role prompt should be writable");
+            fs::write(
+                role_state::role_prompt_path(&project_root, role_name),
+                role_prompt,
+            )
+            .expect("role prompt should be writable");
 
             let mock_codex = MockCodex::new(temp.path(), 0);
             let launch = run_cli(&project_root, &["codex"], Some(&mock_codex));
@@ -2436,8 +2583,11 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             let init = run_cli(&project_root, &["init", "--role", role_name], None);
             assert_eq!(init.exit_code, 0);
-            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
-                .expect("role prompt should be writable");
+            fs::write(
+                role_state::role_prompt_path(&project_root, role_name),
+                role_prompt,
+            )
+            .expect("role prompt should be writable");
 
             let mock_codex = MockCodex::new(temp.path(), 0);
             let launch = run_cli(&project_root, &["codex"], Some(&mock_codex));
@@ -2470,7 +2620,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             let output = run_cli(
                 &project_root,
-                &["reset-prompt", "--role", role_name],
+                &["reset-prompt", "--project", role_name],
                 None,
             );
 
@@ -2481,8 +2631,8 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
             assert_eq!(output.stderr, "");
 
-            let prompt_contents = fs::read_to_string(&prompt_path)
-                .expect("prompt should be readable after reset");
+            let prompt_contents =
+                fs::read_to_string(&prompt_path).expect("prompt should be readable after reset");
             assert!(
                 prompt_contents.contains(&format!("# {role_name}")),
                 "prompt should contain role heading"
@@ -2514,10 +2664,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stdout, "");
-            assert_eq!(
-                output.stderr,
-                "Role 'missing-role' is not initialized.\n"
-            );
+            assert_eq!(output.stderr, "Role 'missing-role' is not initialized.\n");
         }
 
         #[test]
@@ -2557,19 +2704,14 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let project_root = create_project_root(&temp);
             let role_name = "operations";
 
-            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            let init = run_cli(&project_root, &["init", "--project", role_name], None);
             assert_eq!(init.exit_code, 0);
 
             let session_path =
                 role_state::role_state_dir(&project_root, role_name).join("session.md");
-            fs::write(&session_path, "important session data")
-                .expect("session should be writable");
+            fs::write(&session_path, "important session data").expect("session should be writable");
 
-            let output = run_cli(
-                &project_root,
-                &["reset-prompt", "--role", role_name],
-                None,
-            );
+            let output = run_cli(&project_root, &["reset-prompt", "--role", role_name], None);
 
             assert_eq!(output.exit_code, 0);
             assert_eq!(
@@ -2588,17 +2730,16 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(init.exit_code, 0);
 
             let prompt_path = role_state::role_prompt_path(&project_root, role_name);
-            let original_prompt = fs::read_to_string(&prompt_path)
-                .expect("init should create prompt.md");
+            let original_prompt =
+                fs::read_to_string(&prompt_path).expect("init should create prompt.md");
 
-            fs::write(&prompt_path, "# Completely replaced prompt\n\nNothing from before.")
-                .expect("prompt should be writable");
+            fs::write(
+                &prompt_path,
+                "# Completely replaced prompt\n\nNothing from before.",
+            )
+            .expect("prompt should be writable");
 
-            let output = run_cli(
-                &project_root,
-                &["reset-prompt", "--role", role_name],
-                None,
-            );
+            let output = run_cli(&project_root, &["reset-prompt", "--role", role_name], None);
 
             assert_eq!(output.exit_code, 0);
             assert_eq!(
@@ -2607,8 +2748,8 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
             assert_eq!(output.stderr, "");
 
-            let reset_prompt = fs::read_to_string(&prompt_path)
-                .expect("prompt should be readable after reset");
+            let reset_prompt =
+                fs::read_to_string(&prompt_path).expect("prompt should be readable after reset");
             assert_eq!(
                 reset_prompt, original_prompt,
                 "reset-prompt should restore the exact same content as init"
@@ -2635,12 +2776,12 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                 .expect("projects should be writable");
             fs::write(role_dir.join("processes.md"), "process data")
                 .expect("processes should be writable");
-            fs::write(role_dir.join("learnings.md"), "learning data")
-                .expect("learnings should be writable");
+            let shared_learnings_path = role_state::shared_learnings_path(&project_root);
+            fs::write(&shared_learnings_path, "learning data")
+                .expect("shared learnings should be writable");
 
             let runtime_path = role_state::runtime_prompt_path(&project_root, role_name);
-            fs::write(&runtime_path, "runtime prompt")
-                .expect("runtime prompt should be writable");
+            fs::write(&runtime_path, "runtime prompt").expect("runtime prompt should be writable");
 
             let artifacts_dir = role_dir.join("artifacts");
             fs::write(artifacts_dir.join("report.txt"), "report content")
@@ -2656,7 +2797,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             let output = run_cli(
                 &project_root,
-                &["clear-history", "--role", role_name],
+                &["clear-history", "--project", role_name],
                 None,
             );
 
@@ -2668,10 +2809,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(output.stderr, "");
 
             // State files should be empty
-            assert_eq!(
-                fs::read_to_string(role_dir.join("session.md")).unwrap(),
-                ""
-            );
+            assert_eq!(fs::read_to_string(role_dir.join("session.md")).unwrap(), "");
             assert_eq!(
                 fs::read_to_string(role_dir.join("needs-from-operator.md")).unwrap(),
                 ""
@@ -2685,18 +2823,18 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                 ""
             );
             assert_eq!(
-                fs::read_to_string(role_dir.join("learnings.md")).unwrap(),
-                ""
+                fs::read_to_string(shared_learnings_path).unwrap(),
+                "learning data"
             );
 
             // Runtime prompt should be deleted
-            assert!(
-                !runtime_path.exists(),
-                "juliet-prompt.md should be deleted"
-            );
+            assert!(!runtime_path.exists(), "juliet-prompt.md should be deleted");
 
             // Artifacts directory should be empty but still exist
-            assert!(artifacts_dir.is_dir(), "artifacts directory should be preserved");
+            assert!(
+                artifacts_dir.is_dir(),
+                "artifacts directory should be preserved"
+            );
             assert_eq!(
                 fs::read_dir(&artifacts_dir).unwrap().count(),
                 0,
@@ -2723,10 +2861,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stdout, "");
-            assert_eq!(
-                output.stderr,
-                "Role 'missing-role' is not initialized.\n"
-            );
+            assert_eq!(output.stderr, "Role 'missing-role' is not initialized.\n");
         }
 
         #[test]
@@ -2766,18 +2901,14 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let project_root = create_project_root(&temp);
             let role_name = "operations";
 
-            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            let init = run_cli(&project_root, &["init", "--project", role_name], None);
             assert_eq!(init.exit_code, 0);
 
             let prompt_path = role_state::role_prompt_path(&project_root, role_name);
             fs::write(&prompt_path, "# Custom operations prompt\n\nPreserve me.")
                 .expect("prompt should be writable");
 
-            let output = run_cli(
-                &project_root,
-                &["clear-history", "--role", role_name],
-                None,
-            );
+            let output = run_cli(&project_root, &["clear-history", "--role", role_name], None);
 
             assert_eq!(output.exit_code, 0);
             assert_eq!(
@@ -2798,11 +2929,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let runtime_path = role_state::runtime_prompt_path(&project_root, role_name);
             assert!(!runtime_path.exists());
 
-            let output = run_cli(
-                &project_root,
-                &["clear-history", "--role", role_name],
-                None,
-            );
+            let output = run_cli(&project_root, &["clear-history", "--role", role_name], None);
 
             assert_eq!(output.exit_code, 0);
             assert_eq!(
@@ -2830,7 +2957,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let mock_codex = MockCodex::new(temp.path(), 0);
             let output = run_cli(
                 &project_root,
-                &["exec", "--role", role_name, "codex", "fix", "the", "bug"],
+                &["exec", "--project", role_name, "codex", "fix", "the", "bug"],
                 Some(&mock_codex),
             );
 
@@ -2838,8 +2965,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(output.stdout, "");
             assert_eq!(output.stderr, "");
 
-            let expected_prompt =
-                format!("{role_prompt}\n\nUser input:\nfix the bug");
+            let expected_prompt = format!("{role_prompt}\n\nUser input:\nfix the bug");
             assert_eq!(
                 mock_codex.recorded_args(),
                 vec![
@@ -2864,8 +2990,11 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             let init = run_cli(&project_root, &["init", "--role", role_name], None);
             assert_eq!(init.exit_code, 0);
-            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
-                .expect("role prompt should be writable");
+            fs::write(
+                role_state::role_prompt_path(&project_root, role_name),
+                role_prompt,
+            )
+            .expect("role prompt should be writable");
 
             let mock_codex = MockCodex::new(temp.path(), 0);
             let output = run_cli(
@@ -2878,8 +3007,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(output.stdout, "");
             assert_eq!(output.stderr, "");
 
-            let expected_prompt =
-                format!("{role_prompt}\n\nUser input:\ndeploy now");
+            let expected_prompt = format!("{role_prompt}\n\nUser input:\ndeploy now");
             assert_eq!(
                 mock_codex.recorded_args(),
                 vec![
@@ -2929,7 +3057,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             assert_eq!(output.stdout, "");
             assert_eq!(
                 output.stderr,
-                "Role not found: missing-role. Run: juliet init --role missing-role\n"
+                "Role not found: missing-role. Run: juliet init --project missing-role\n"
             );
         }
 
@@ -2938,11 +3066,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let temp = TestDir::new("integration-exec-no-roles");
             let project_root = create_project_root(&temp);
 
-            let output = run_cli(
-                &project_root,
-                &["exec", "codex", "hello"],
-                None,
-            );
+            let output = run_cli(&project_root, &["exec", "codex", "hello"], None);
 
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stdout, "");
@@ -2959,17 +3083,13 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             let init2 = run_cli(&project_root, &["init", "--role", "zeta-team"], None);
             assert_eq!(init2.exit_code, 0);
 
-            let output = run_cli(
-                &project_root,
-                &["exec", "codex", "hello"],
-                None,
-            );
+            let output = run_cli(&project_root, &["exec", "codex", "hello"], None);
 
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stdout, "");
             assert_eq!(
                 output.stderr,
-                "Multiple roles found. Specify one with --role <name>:\nalpha-team\nzeta-team\n"
+                "Multiple roles found. Specify one with --project <name>:\nalpha-team\nzeta-team\n"
             );
         }
 
@@ -3079,8 +3199,11 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 
             let init = run_cli(&project_root, &["init", "--role", role_name], None);
             assert_eq!(init.exit_code, 0);
-            fs::write(role_state::role_prompt_path(&project_root, role_name), role_prompt)
-                .expect("role prompt should be writable");
+            fs::write(
+                role_state::role_prompt_path(&project_root, role_name),
+                role_prompt,
+            )
+            .expect("role prompt should be writable");
 
             let mock_claude = MockClaude::new(temp.path(), 0);
             let output = run_cli_with_engines(

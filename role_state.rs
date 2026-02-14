@@ -5,17 +5,18 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 const JULIET_STATE_DIR: &str = ".juliet";
+const SHARED_STATE_DIR: &str = ".shared";
 const ARTIFACTS_DIR: &str = "artifacts";
+const LEARNINGS_FILE: &str = "learnings.md";
 const STATE_GITIGNORE_FILE: &str = ".gitignore";
 const STATE_GITIGNORE_CONTENTS: &str = "# Managed by juliet: keep role prompt customizations, ignore runtime state.\n*\n!.gitignore\n!*/\n!*/prompt.md\n";
 const PROMPT_FILE: &str = "prompt.md";
 const RUNTIME_PROMPT_FILE: &str = "juliet-prompt.md";
-const STATE_FILES: [&str; 5] = [
+const STATE_FILES: [&str; 4] = [
     "session.md",
     "needs-from-operator.md",
     "projects.md",
     "processes.md",
-    "learnings.md",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,7 +30,17 @@ pub fn role_state_dir(project_root: &Path, role_name: &str) -> PathBuf {
 }
 
 pub fn state_gitignore_path(project_root: &Path) -> PathBuf {
-    project_root.join(JULIET_STATE_DIR).join(STATE_GITIGNORE_FILE)
+    project_root
+        .join(JULIET_STATE_DIR)
+        .join(STATE_GITIGNORE_FILE)
+}
+
+pub fn shared_state_dir(project_root: &Path) -> PathBuf {
+    project_root.join(JULIET_STATE_DIR).join(SHARED_STATE_DIR)
+}
+
+pub fn shared_learnings_path(project_root: &Path) -> PathBuf {
+    shared_state_dir(project_root).join(LEARNINGS_FILE)
 }
 
 pub fn role_prompt_path(project_root: &Path, role_name: &str) -> PathBuf {
@@ -50,6 +61,7 @@ pub fn role_state_is_scaffolded(project_root: &Path, role_name: &str) -> bool {
 
 pub fn create_role_state(project_root: &Path, role_name: &str) -> io::Result<()> {
     ensure_state_gitignore(project_root)?;
+    ensure_shared_learnings(project_root)?;
 
     let role_dir = role_state_dir(project_root, role_name);
     fs::create_dir_all(role_dir.join(ARTIFACTS_DIR))?;
@@ -59,6 +71,12 @@ pub fn create_role_state(project_root: &Path, role_name: &str) -> io::Result<()>
     }
 
     Ok(())
+}
+
+pub fn ensure_shared_learnings(project_root: &Path) -> io::Result<()> {
+    let shared_dir = shared_state_dir(project_root);
+    fs::create_dir_all(&shared_dir)?;
+    ensure_file(&shared_learnings_path(project_root))
 }
 
 pub fn ensure_state_gitignore(project_root: &Path) -> io::Result<()> {
@@ -86,6 +104,10 @@ pub fn discover_configured_roles(project_root: &Path) -> io::Result<Vec<Configur
             Ok(name) => name,
             Err(_) => continue,
         };
+
+        if role_name == SHARED_STATE_DIR {
+            continue;
+        }
 
         let role_dir = entry.path();
         if role_name == ARTIFACTS_DIR && !has_role_state_layout(&role_dir) {
@@ -230,6 +252,10 @@ mod tests {
                 .expect("state gitignore should be readable"),
             STATE_GITIGNORE_CONTENTS
         );
+        assert!(
+            shared_learnings_path(temp.path()).is_file(),
+            "shared learnings file should be scaffolded"
+        );
 
         assert_eq!(
             runtime_prompt_path(temp.path(), role_name),
@@ -263,7 +289,20 @@ mod tests {
         );
         assert_eq!(
             state_gitignore_path(temp.path()),
-            temp.path().join(JULIET_STATE_DIR).join(STATE_GITIGNORE_FILE)
+            temp.path()
+                .join(JULIET_STATE_DIR)
+                .join(STATE_GITIGNORE_FILE)
+        );
+        assert_eq!(
+            shared_state_dir(temp.path()),
+            temp.path().join(JULIET_STATE_DIR).join(SHARED_STATE_DIR)
+        );
+        assert_eq!(
+            shared_learnings_path(temp.path()),
+            temp.path()
+                .join(JULIET_STATE_DIR)
+                .join(SHARED_STATE_DIR)
+                .join(LEARNINGS_FILE)
         );
     }
 
@@ -275,11 +314,17 @@ mod tests {
         create_role_state(temp.path(), role_name).expect("initial scaffold should succeed");
         let session_path = role_state_dir(temp.path(), role_name).join("session.md");
         fs::write(&session_path, "cached session contents").expect("seed state content");
+        let learnings_path = shared_learnings_path(temp.path());
+        fs::write(&learnings_path, "shared learnings").expect("seed shared learnings content");
 
         create_role_state(temp.path(), role_name).expect("repeat scaffold should succeed");
 
         let contents = fs::read_to_string(session_path).expect("session.md should remain readable");
         assert_eq!(contents, "cached session contents");
+        assert_eq!(
+            fs::read_to_string(learnings_path).expect("shared learnings should remain readable"),
+            "shared learnings"
+        );
     }
 
     #[test]
@@ -392,6 +437,13 @@ mod tests {
             .expect("marketing role should be created");
         fs::create_dir_all(state_root.join(ARTIFACTS_DIR))
             .expect("artifacts directory should be created");
+        fs::create_dir_all(state_root.join(SHARED_STATE_DIR))
+            .expect("shared state directory should be created");
+        fs::write(
+            state_root.join(SHARED_STATE_DIR).join(LEARNINGS_FILE),
+            "shared",
+        )
+        .expect("shared learnings file should be created");
         fs::create_dir_all(state_root.join("juliet")).expect("juliet role should be created");
         fs::write(state_root.join("README.md"), "not a role")
             .expect("non-directory entry should be created");

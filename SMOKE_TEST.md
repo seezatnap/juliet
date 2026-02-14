@@ -21,18 +21,18 @@ ROLE=director-of-engineering
 - [ ] Run `./juliet`.
 - [ ] Verify stderr includes:
   - `Usage: juliet <command> [options]`
-  - `juliet init --role <name>`
-  - `juliet --role <name> <claude|codex>`
+  - `juliet init --project <name>`
+  - `juliet --project <name> <claude|codex>`
   - `juliet <claude|codex>`
 - [ ] Verify exit code is non-zero.
 
 **Step 2: Init Usage Error**
 - [ ] Run `./juliet init`.
-- [ ] Verify stderr is exactly `Usage: juliet init --role <name>`.
+- [ ] Verify stderr is exactly `Usage: juliet init --project <name> (alias: --role <name>)`.
 - [ ] Verify exit code is non-zero.
 
 **Step 3: Role Initialization**
-- [ ] Run `./juliet init --role "$ROLE"`.
+- [ ] Run `./juliet init --project "$ROLE"`.
 - [ ] Verify stdout is `Initialized role: $ROLE`.
 - [ ] Verify `prompts/$ROLE.md` exists.
 - [ ] Verify `.juliet/$ROLE/` exists with:
@@ -41,15 +41,16 @@ ROLE=director-of-engineering
   - `projects.md`
   - `processes.md`
   - `artifacts/`
+- [ ] Verify shared learnings file exists at `.juliet/.shared/learnings.md`.
 - [ ] Verify `.juliet/$ROLE/juliet-prompt.md` does not exist until launch.
 
 **Step 4: Init Idempotency**
-- [ ] Run `./juliet init --role "$ROLE"` again.
+- [ ] Run `./juliet init --project "$ROLE"` again.
 - [ ] Verify stdout is `Role already exists: $ROLE`.
 - [ ] Verify exit code is `0`.
 
 **Step 5: Explicit Launch**
-- [ ] Run `./juliet --role "$ROLE" codex "status check"` (or `claude` if preferred).
+- [ ] Run `./juliet --project "$ROLE" codex "status check"` (or `claude` if preferred).
 - [ ] Verify the selected engine is invoked.
 - [ ] Verify `.juliet/$ROLE/juliet-prompt.md` is written from `prompts/$ROLE.md`.
 - [ ] Verify operator input is appended as:
@@ -59,20 +60,20 @@ ROLE=director-of-engineering
 **Step 6: Implicit Launch (Single Role)**
 - [ ] Ensure only one configured role exists under `.juliet/`.
 - [ ] Run `./juliet codex`.
-- [ ] Verify launch succeeds without `--role`.
+- [ ] Verify launch succeeds without `--project`.
 
 **Step 7: No Roles Configured Guidance**
 - [ ] In a clean temp directory with no `.juliet/<role>/` state, run `<path-to-juliet> codex`.
-- [ ] Verify stderr is `No roles configured. Run: juliet init --role <name>`.
+- [ ] Verify stderr is `No roles configured. Run: juliet init --project <name>`.
 - [ ] Verify exit code is non-zero.
 
 **Step 8: Multiple Roles Guidance**
-- [ ] Create a second role: `./juliet init --role director-of-marketing`.
+- [ ] Create a second role: `./juliet init --project director-of-marketing`.
 - [ ] Run `./juliet codex`.
-- [ ] Verify stderr starts with `Multiple roles found. Specify one with --role <name>:` and lists both role names on separate lines.
+- [ ] Verify stderr starts with `Multiple roles found. Specify one with --project <name>:` and lists both role names on separate lines.
 - [ ] Verify exit code is non-zero.
 
 **Step 9: Role Name Validation**
-- [ ] Run `./juliet init --role Invalid_Name`.
+- [ ] Run `./juliet init --project Invalid_Name`.
 - [ ] Verify stderr is `Invalid role name: Invalid_Name. Use lowercase letters, numbers, and hyphens.`
 - [ ] Verify exit code is non-zero.

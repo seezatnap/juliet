@@ -10,11 +10,11 @@ You could run Juliet by copying the prompt, but the CLI sets up several things f
 
 You fire up Juliet by creating a new role. This will use the default prompt, which is a team orchestrator / director:
 
-`juliet init --role eng-lead`
+`juliet init --project eng-lead`
 
 Boot Juliet up:
 
-`juliet --role eng-lead claude`
+`juliet --project eng-lead claude`
 
 Juliet will scan your project for existing configurations in the `.juliet` folder for rehydration, but this is a new project so it will simply ask:
 
@@ -68,21 +68,24 @@ Usage: juliet <command> [options]
 
 Commands:
   Initialize a new role:
-    juliet init --role <name>
+    juliet init --project <name>
 
   Launch a specific role:
-    juliet --role <name> <claude|codex>
+    juliet --project <name> <claude|codex>
 
   Launch (auto-selects role when only one exists):
     juliet <claude|codex>
 
   Reset a role's prompt to default:
-    juliet reset-prompt --role <name>
+    juliet reset-prompt --project <name>
 
   Clear a role's history:
-    juliet clear-history --role <name>
+    juliet clear-history --project <name>
 
   Execute a single non-interactive turn:
-    juliet exec --role <name> <claude|codex> <message...>
+    juliet exec --project <name> <claude|codex> <message...>
     juliet exec <claude|codex> <message...>
+
+Option alias:
+  --role <name>  Alias for --project <name> (backward compatibility)
 ```
