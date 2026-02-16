@@ -1,9 +1,10 @@
 use clap::{error::ErrorKind, Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use serde_json::{json, Value};
 use std::env;
 use std::fs;
 use std::io;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
 
 mod role_name;
 mod role_state;
@@ -18,6 +19,15 @@ const OPERATOR_PLACEHOLDER: &str =
 enum Engine {
     Claude,
     Codex,
+}
+
+impl Engine {
+    fn as_str(self) -> &'static str {
+        match self {
+            Engine::Claude => "claude",
+            Engine::Codex => "codex",
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -40,7 +50,22 @@ enum CliCommand {
         role_name: Option<String>,
         engine: Engine,
         message: String,
+        continue_id: Option<String>,
+        json_output: bool,
     },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ExecResult {
+    text: String,
+    resume_id: String,
+}
+
+#[derive(Debug)]
+struct EngineOutput {
+    status_code: i32,
+    stdout: String,
+    stderr: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,15 +96,19 @@ struct ExecArgs {
         allow_hyphen_values = true
     )]
     role_name: Option<String>,
+    /// Continue a prior non-interactive thread/session id.
+    #[arg(long = "continue", value_name = "RESUME_ID")]
+    continue_id: Option<String>,
+    /// Emit normalized JSON output for this exec turn.
+    #[arg(long = "json")]
+    json_output: bool,
     /// Engine to execute.
     engine: Engine,
     /// Message text appended to the prompt as user input.
     #[arg(
         required = true,
         num_args = 1..,
-        trailing_var_arg = true,
-        value_name = "MESSAGE",
-        allow_hyphen_values = true
+        value_name = "MESSAGE"
     )]
     message: Vec<String>,
 }
@@ -162,6 +191,8 @@ fn parse_cli_command(args: &[String]) -> Result<CliCommand, clap::Error> {
             role_name: exec.role_name,
             engine: exec.engine,
             message: exec.message.join(" "),
+            continue_id: exec.continue_id,
+            json_output: exec.json_output,
         }),
         None => {
             let Some(engine) = parsed.engine else {
@@ -215,34 +246,207 @@ fn run_engine(engine: Engine, prompt: &str, cwd: &Path) -> io::Result<i32> {
     }
 }
 
-fn run_claude_print(prompt: &str, cwd: &Path) -> io::Result<i32> {
-    let status = Command::new("claude")
-        .arg("--dangerously-skip-permissions")
+fn command_output_to_engine_output(output: Output) -> EngineOutput {
+    EngineOutput {
+        status_code: output.status.code().unwrap_or(1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
+fn run_codex_exec_json(
+    prompt: &str,
+    continue_id: Option<&str>,
+    cwd: &Path,
+) -> io::Result<EngineOutput> {
+    let mut command = Command::new("codex");
+    command
+        .arg("--dangerously-bypass-approvals-and-sandbox")
+        .arg("exec");
+
+    if let Some(resume_id) = continue_id {
+        command.arg("resume").arg(resume_id);
+    }
+
+    let output = command
+        .arg(prompt)
+        .arg("--json")
+        .current_dir(cwd)
+        .output()?;
+    Ok(command_output_to_engine_output(output))
+}
+
+fn run_claude_exec_json(
+    prompt: &str,
+    continue_id: Option<&str>,
+    cwd: &Path,
+) -> io::Result<EngineOutput> {
+    let mut command = Command::new("claude");
+    command.arg("--dangerously-skip-permissions");
+
+    if let Some(resume_id) = continue_id {
+        command.arg("--resume").arg(resume_id);
+    }
+
+    let output = command
         .arg("-p")
         .arg(prompt)
+        .arg("--output-format")
+        .arg("json")
         .env("IS_SANDBOX", "1")
         .current_dir(cwd)
-        .status()?;
-
-    Ok(status.code().unwrap_or(1))
+        .output()?;
+    Ok(command_output_to_engine_output(output))
 }
 
-fn run_codex_quiet(prompt: &str, cwd: &Path) -> io::Result<i32> {
-    let status = Command::new("codex")
-        .arg("--dangerously-bypass-approvals-and-sandbox")
-        .arg("-q")
-        .arg(prompt)
-        .current_dir(cwd)
-        .status()?;
-
-    Ok(status.code().unwrap_or(1))
-}
-
-fn run_engine_print(engine: Engine, prompt: &str, cwd: &Path) -> io::Result<i32> {
+fn run_exec_engine(
+    engine: Engine,
+    prompt: &str,
+    continue_id: Option<&str>,
+    cwd: &Path,
+) -> io::Result<EngineOutput> {
     match engine {
-        Engine::Claude => run_claude_print(prompt, cwd),
-        Engine::Codex => run_codex_quiet(prompt, cwd),
+        Engine::Claude => run_claude_exec_json(prompt, continue_id, cwd),
+        Engine::Codex => run_codex_exec_json(prompt, continue_id, cwd),
     }
+}
+
+fn parse_json_values(raw: &str) -> Vec<Value> {
+    let mut values = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+            values.push(value);
+        }
+    }
+
+    if values.is_empty() {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+                values.push(value);
+            }
+        }
+    }
+
+    values
+}
+
+fn extract_text_candidate(value: &Value) -> Option<String> {
+    for pointer in [
+        "/item/text",
+        "/text",
+        "/result",
+        "/output_text",
+        "/message/text",
+        "/content/0/text",
+        "/message/content/0/text",
+    ] {
+        if let Some(text) = value.pointer(pointer).and_then(Value::as_str) {
+            return Some(text.to_string());
+        }
+    }
+
+    if let Some(content) = value.get("content").and_then(Value::as_array) {
+        for item in content {
+            if let Some(text) = item.as_str() {
+                return Some(text.to_string());
+            }
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                return Some(text.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn parse_codex_exec_result(raw_stdout: &str) -> Result<ExecResult, String> {
+    let values = parse_json_values(raw_stdout);
+    if values.is_empty() {
+        return Err("codex returned no parseable JSON output".to_string());
+    }
+
+    let mut resume_id = None;
+    let mut text = None;
+    for value in &values {
+        if resume_id.is_none() {
+            resume_id = value
+                .get("thread_id")
+                .and_then(Value::as_str)
+                .map(|id| id.to_string());
+        }
+
+        if value.get("type").and_then(Value::as_str) == Some("item.completed") {
+            if let Some(item_text) = value.pointer("/item/text").and_then(Value::as_str) {
+                text = Some(item_text.to_string());
+            }
+        }
+    }
+
+    if text.is_none() {
+        for value in &values {
+            if let Some(candidate) = extract_text_candidate(value) {
+                text = Some(candidate);
+            }
+        }
+    }
+
+    let resume_id =
+        resume_id.ok_or_else(|| "codex JSON output did not include thread_id".to_string())?;
+    Ok(ExecResult {
+        text: text.unwrap_or_default(),
+        resume_id,
+    })
+}
+
+fn parse_claude_exec_result(raw_stdout: &str) -> Result<ExecResult, String> {
+    let values = parse_json_values(raw_stdout);
+    if values.is_empty() {
+        return Err("claude returned no parseable JSON output".to_string());
+    }
+
+    let mut resume_id = None;
+    let mut text = None;
+    for value in &values {
+        if resume_id.is_none() {
+            resume_id = value
+                .get("session_id")
+                .and_then(Value::as_str)
+                .map(|id| id.to_string());
+        }
+        if text.is_none() {
+            text = extract_text_candidate(value);
+        } else if let Some(candidate) = extract_text_candidate(value) {
+            text = Some(candidate);
+        }
+    }
+
+    let resume_id =
+        resume_id.ok_or_else(|| "claude JSON output did not include session_id".to_string())?;
+    Ok(ExecResult {
+        text: text.unwrap_or_default(),
+        resume_id,
+    })
+}
+
+fn parse_exec_result(engine: Engine, raw_stdout: &str) -> Result<ExecResult, String> {
+    match engine {
+        Engine::Claude => parse_claude_exec_result(raw_stdout),
+        Engine::Codex => parse_codex_exec_result(raw_stdout),
+    }
+}
+
+fn format_exec_result_json(engine: Engine, result: &ExecResult) -> String {
+    json!({
+        "text": result.text,
+        "resume_id": result.resume_id,
+        "engine": engine.as_str(),
+    })
+    .to_string()
 }
 
 fn build_launch_prompt(base: &str, operator_input: Option<&str>) -> String {
@@ -532,10 +736,12 @@ fn run_exec_command_in_dir<F>(
     role_name: Option<&str>,
     engine: Engine,
     message: &str,
+    continue_id: Option<&str>,
+    json_output: bool,
     engine_runner: F,
 ) -> i32
 where
-    F: FnOnce(Engine, &str, &Path) -> io::Result<i32>,
+    F: FnOnce(Engine, &str, Option<&str>, &Path) -> io::Result<EngineOutput>,
 {
     let base_prompt = match prepare_launch_prompt(project_root, role_name) {
         Ok(contents) => contents,
@@ -547,8 +753,33 @@ where
 
     let prompt = build_launch_prompt(&base_prompt, Some(message));
 
-    match engine_runner(engine, &prompt, project_root) {
-        Ok(code) => code,
+    match engine_runner(engine, &prompt, continue_id, project_root) {
+        Ok(engine_output) => {
+            if engine_output.status_code != 0 {
+                if !engine_output.stderr.is_empty() {
+                    eprint!("{}", engine_output.stderr);
+                } else if !engine_output.stdout.is_empty() {
+                    eprint!("{}", engine_output.stdout);
+                }
+                return engine_output.status_code;
+            }
+
+            let exec_result = match parse_exec_result(engine, &engine_output.stdout) {
+                Ok(parsed) => parsed,
+                Err(err) => {
+                    eprintln!("failed to parse {} exec output: {err}", engine.as_str());
+                    return 1;
+                }
+            };
+
+            if json_output {
+                println!("{}", format_exec_result_json(engine, &exec_result));
+            } else if !exec_result.text.is_empty() {
+                println!("{}", exec_result.text);
+            }
+
+            engine_output.status_code
+        }
         Err(err) => {
             eprintln!("failed to run engine: {err}");
             1
@@ -556,7 +787,13 @@ where
     }
 }
 
-fn run_exec_command(role_name: Option<&str>, engine: Engine, message: &str) -> i32 {
+fn run_exec_command(
+    role_name: Option<&str>,
+    engine: Engine,
+    message: &str,
+    continue_id: Option<&str>,
+    json_output: bool,
+) -> i32 {
     let cwd = match env::current_dir() {
         Ok(dir) => dir,
         Err(err) => {
@@ -565,7 +802,15 @@ fn run_exec_command(role_name: Option<&str>, engine: Engine, message: &str) -> i
         }
     };
 
-    run_exec_command_in_dir(&cwd, role_name, engine, message, run_engine_print)
+    run_exec_command_in_dir(
+        &cwd,
+        role_name,
+        engine,
+        message,
+        continue_id,
+        json_output,
+        run_exec_engine,
+    )
 }
 
 fn main() {
@@ -592,7 +837,15 @@ fn main() {
             role_name,
             engine,
             message,
-        } => run_exec_command(role_name.as_deref(), engine, &message),
+            continue_id,
+            json_output,
+        } => run_exec_command(
+            role_name.as_deref(),
+            engine,
+            &message,
+            continue_id.as_deref(),
+            json_output,
+        ),
     };
 
     std::process::exit(exit_code);
@@ -732,6 +985,8 @@ mod tests {
                 role_name: None,
                 engine: Engine::Claude,
                 message: "do the thing".to_string(),
+                continue_id: None,
+                json_output: false,
             }
         );
 
@@ -745,6 +1000,8 @@ mod tests {
                 role_name: Some("my-role".to_string()),
                 engine: Engine::Codex,
                 message: "fix the bug".to_string(),
+                continue_id: None,
+                json_output: false,
             }
         );
     }
@@ -765,6 +1022,50 @@ mod tests {
                 role_name: Some("-leading".to_string()),
                 engine: Engine::Claude,
                 message: "hello".to_string(),
+                continue_id: None,
+                json_output: false,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_exec_continue_and_json_options() {
+        let parsed = parse_cli_command(&to_args(&[
+            "exec",
+            "--project",
+            "my-role",
+            "--continue",
+            "session-123",
+            "--json",
+            "codex",
+            "ship",
+            "it",
+        ]))
+        .expect("exec parse with continue/json options should succeed");
+        assert_eq!(
+            parsed,
+            CliCommand::Exec {
+                role_name: Some("my-role".to_string()),
+                engine: Engine::Codex,
+                message: "ship it".to_string(),
+                continue_id: Some("session-123".to_string()),
+                json_output: true,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_exec_json_option_after_message() {
+        let parsed = parse_cli_command(&to_args(&["exec", "codex", "hello", "--json"]))
+            .expect("exec parse should allow --json after message");
+        assert_eq!(
+            parsed,
+            CliCommand::Exec {
+                role_name: None,
+                engine: Engine::Codex,
+                message: "hello".to_string(),
+                continue_id: None,
+                json_output: true,
             }
         );
     }
@@ -777,6 +1078,8 @@ mod tests {
             vec!["exec", "claude"],
             vec!["exec", "--role", "my-role", "claude"],
             vec!["exec", "--role"],
+            vec!["exec", "--continue", "claude", "hello"],
+            vec!["exec", "--continue"],
         ] {
             assert!(
                 parse_cli_command(&to_args(&args)).is_err(),
@@ -1497,11 +1800,20 @@ mod tests {
             Some(role_name),
             Engine::Codex,
             "fix the bug",
-            |engine, prompt, cwd| {
+            None,
+            false,
+            |engine, prompt, continue_id, cwd| {
                 captured_engine = Some(engine);
                 captured_prompt = prompt.to_string();
+                assert_eq!(continue_id, None);
                 assert_eq!(cwd, temp.path());
-                Ok(0)
+                Ok(EngineOutput {
+                    status_code: 0,
+                    stdout:
+                        "{\"thread_id\":\"thread-1\"}\n{\"type\":\"item.completed\",\"item\":{\"text\":\"done\"}}\n"
+                            .to_string(),
+                    stderr: String::new(),
+                })
             },
         );
 
@@ -1537,11 +1849,18 @@ mod tests {
             None,
             Engine::Claude,
             "deploy the app",
-            |engine, prompt, cwd| {
+            None,
+            false,
+            |engine, prompt, continue_id, cwd| {
                 captured_engine = Some(engine);
                 captured_prompt = prompt.to_string();
+                assert_eq!(continue_id, None);
                 assert_eq!(cwd, temp.path());
-                Ok(0)
+                Ok(EngineOutput {
+                    status_code: 0,
+                    stdout: "{\"session_id\":\"session-1\",\"result\":\"done\"}\n".to_string(),
+                    stderr: String::new(),
+                })
             },
         );
 
@@ -1574,7 +1893,15 @@ mod tests {
             Some(role_name),
             Engine::Claude,
             "hello",
-            |_engine, _prompt, _cwd| Ok(42),
+            None,
+            false,
+            |_engine, _prompt, _continue_id, _cwd| {
+                Ok(EngineOutput {
+                    status_code: 42,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                })
+            },
         );
 
         assert_eq!(exit_code, 42);
@@ -1589,7 +1916,9 @@ mod tests {
             Some("missing-role"),
             Engine::Codex,
             "hello",
-            |_engine, _prompt, _cwd| Ok(0),
+            None,
+            false,
+            |_engine, _prompt, _continue_id, _cwd| unreachable!("runner should not be called"),
         );
 
         assert_eq!(exit_code, 1);
@@ -1604,7 +1933,9 @@ mod tests {
             None,
             Engine::Claude,
             "hello",
-            |_engine, _prompt, _cwd| Ok(0),
+            None,
+            false,
+            |_engine, _prompt, _continue_id, _cwd| unreachable!("runner should not be called"),
         );
 
         assert_eq!(exit_code, 1);
@@ -1623,7 +1954,9 @@ mod tests {
             None,
             Engine::Codex,
             "hello",
-            |_engine, _prompt, _cwd| Ok(0),
+            None,
+            false,
+            |_engine, _prompt, _continue_id, _cwd| unreachable!("runner should not be called"),
         );
 
         assert_eq!(exit_code, 1);
@@ -1645,7 +1978,9 @@ mod tests {
             Some(role_name),
             Engine::Claude,
             "hello",
-            |_engine, _prompt, _cwd| {
+            None,
+            false,
+            |_engine, _prompt, _continue_id, _cwd| {
                 Err(io::Error::new(io::ErrorKind::NotFound, "engine not found"))
             },
         );
@@ -1662,7 +1997,9 @@ mod tests {
             Some("../escaped-role"),
             Engine::Codex,
             "hello",
-            |_engine, _prompt, _cwd| Ok(0),
+            None,
+            false,
+            |_engine, _prompt, _continue_id, _cwd| unreachable!("runner should not be called"),
         );
 
         assert_eq!(exit_code, 1);
@@ -1703,6 +2040,17 @@ mod tests {
                     r#"#!/usr/bin/env bash
 set -eu
 printf '%s\0' "$@" > "${JULIET_TEST_CODEX_ARGS_FILE:?}"
+if [ "${2:-}" = "exec" ]; then
+  if [ "${JULIET_TEST_CODEX_STDOUT:-}" != "" ]; then
+    printf '%s' "${JULIET_TEST_CODEX_STDOUT}"
+  else
+    printf '%s\n' '{"thread_id":"codex-thread-id"}'
+    printf '%s\n' '{"type":"item.completed","item":{"text":"codex mock response"}}'
+  fi
+fi
+if [ "${JULIET_TEST_CODEX_STDERR:-}" != "" ]; then
+  printf '%s' "${JULIET_TEST_CODEX_STDERR}" >&2
+fi
 exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
 "#,
                 )
@@ -1761,6 +2109,23 @@ exit "${JULIET_TEST_CODEX_EXIT_CODE:-0}"
 set -eu
 printf '%s\0' "$@" > "${JULIET_TEST_CLAUDE_ARGS_FILE:?}"
 printf 'IS_SANDBOX=%s\n' "${IS_SANDBOX:-}" > "${JULIET_TEST_CLAUDE_ENV_FILE:?}"
+emit_json="0"
+for arg in "$@"; do
+  if [ "$arg" = "--output-format" ]; then
+    emit_json="1"
+    break
+  fi
+done
+if [ "$emit_json" = "1" ]; then
+  if [ "${JULIET_TEST_CLAUDE_STDOUT:-}" != "" ]; then
+    printf '%s' "${JULIET_TEST_CLAUDE_STDOUT}"
+  else
+    printf '%s\n' '{"session_id":"claude-session-id","result":"claude mock response"}'
+  fi
+fi
+if [ "${JULIET_TEST_CLAUDE_STDERR:-}" != "" ]; then
+  printf '%s' "${JULIET_TEST_CLAUDE_STDERR}" >&2
+fi
 exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
 "#,
                 )
@@ -2585,7 +2950,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
 
             assert_eq!(output.exit_code, 0);
-            assert_eq!(output.stdout, "");
+            assert_eq!(output.stdout, "codex mock response\n");
             assert_eq!(output.stderr, "");
 
             let expected_prompt = format!("{role_prompt}\n\nUser input:\nfix the bug");
@@ -2593,8 +2958,9 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                 mock_codex.recorded_args(),
                 vec![
                     "--dangerously-bypass-approvals-and-sandbox".to_string(),
-                    "-q".to_string(),
-                    expected_prompt.clone(),
+                    "exec".to_string(),
+                    expected_prompt,
+                    "--json".to_string(),
                 ]
             );
 
@@ -2627,7 +2993,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
 
             assert_eq!(output.exit_code, 0);
-            assert_eq!(output.stdout, "");
+            assert_eq!(output.stdout, "codex mock response\n");
             assert_eq!(output.stderr, "");
 
             let expected_prompt = format!("{role_prompt}\n\nUser input:\ndeploy now");
@@ -2635,8 +3001,9 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                 mock_codex.recorded_args(),
                 vec![
                     "--dangerously-bypass-approvals-and-sandbox".to_string(),
-                    "-q".to_string(),
+                    "exec".to_string(),
                     expected_prompt,
+                    "--json".to_string(),
                 ]
             );
 
@@ -2738,7 +3105,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
 
             assert_eq!(output.exit_code, 0);
-            assert_eq!(output.stdout, "");
+            assert_eq!(output.stdout, "claude mock response\n");
             assert_eq!(output.stderr, "");
 
             let expected_prompt = format!("{role_prompt}\n\nUser input:\ndo the thing");
@@ -2748,6 +3115,8 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                     "--dangerously-skip-permissions".to_string(),
                     "-p".to_string(),
                     expected_prompt,
+                    "--output-format".to_string(),
+                    "json".to_string(),
                 ]
             );
 
@@ -2779,8 +3148,8 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
         }
 
         #[test]
-        fn cli_exec_codex_uses_quiet_flag() {
-            let temp = TestDir::new("integration-exec-codex-quiet");
+        fn cli_exec_codex_uses_exec_json_flag() {
+            let temp = TestDir::new("integration-exec-codex-json");
             let project_root = create_project_root(&temp);
             let role_name = "director-of-engineering";
             let role_prompt = "# Codex exec prompt\n\nRun codex exec.";
@@ -2799,7 +3168,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
 
             assert_eq!(output.exit_code, 0);
-            assert_eq!(output.stdout, "");
+            assert_eq!(output.stdout, "codex mock response\n");
             assert_eq!(output.stderr, "");
 
             let expected_prompt = format!("{role_prompt}\n\nUser input:\nfix bug");
@@ -2807,8 +3176,9 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                 mock_codex.recorded_args(),
                 vec![
                     "--dangerously-bypass-approvals-and-sandbox".to_string(),
-                    "-q".to_string(),
+                    "exec".to_string(),
                     expected_prompt,
+                    "--json".to_string(),
                 ]
             );
         }
@@ -2837,7 +3207,7 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
             );
 
             assert_eq!(output.exit_code, 0);
-            assert_eq!(output.stdout, "");
+            assert_eq!(output.stdout, "claude mock response\n");
             assert_eq!(output.stderr, "");
 
             let expected_prompt = format!("{role_prompt}\n\nUser input:\ndeploy now");
@@ -2847,6 +3217,8 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                     "--dangerously-skip-permissions".to_string(),
                     "-p".to_string(),
                     expected_prompt,
+                    "--output-format".to_string(),
+                    "json".to_string(),
                 ]
             );
 
@@ -2855,6 +3227,121 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
                 env_output.contains("IS_SANDBOX=1"),
                 "IS_SANDBOX env var should be set to 1, got: {env_output}"
             );
+        }
+
+        #[test]
+        fn cli_exec_continue_uses_codex_resume_syntax() {
+            let temp = TestDir::new("integration-exec-codex-continue");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let output = run_cli(
+                &project_root,
+                &[
+                    "exec",
+                    "--role",
+                    role_name,
+                    "--continue",
+                    "thread-123",
+                    "codex",
+                    "hello",
+                ],
+                Some(&mock_codex),
+            );
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "codex mock response\n");
+            assert_eq!(output.stderr, "");
+
+            assert_eq!(
+                mock_codex.recorded_args(),
+                vec![
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                    "exec".to_string(),
+                    "resume".to_string(),
+                    "thread-123".to_string(),
+                    format!(
+                        "{}\n\nUser input:\nhello",
+                        fs::read_to_string(role_state::role_prompt_path(&project_root, role_name))
+                            .expect("role prompt should be readable")
+                    ),
+                    "--json".to_string(),
+                ]
+            );
+        }
+
+        #[test]
+        fn cli_exec_continue_uses_claude_resume_syntax() {
+            let temp = TestDir::new("integration-exec-claude-continue");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let mock_claude = MockClaude::new(temp.path(), 0);
+            let output = run_cli_with_engines(
+                &project_root,
+                &[
+                    "exec",
+                    "--role",
+                    role_name,
+                    "--continue",
+                    "session-456",
+                    "claude",
+                    "hello",
+                ],
+                None,
+                Some(&mock_claude),
+            );
+            assert_eq!(output.exit_code, 0);
+            assert_eq!(output.stdout, "claude mock response\n");
+            assert_eq!(output.stderr, "");
+
+            assert_eq!(
+                mock_claude.recorded_args(),
+                vec![
+                    "--dangerously-skip-permissions".to_string(),
+                    "--resume".to_string(),
+                    "session-456".to_string(),
+                    "-p".to_string(),
+                    format!(
+                        "{}\n\nUser input:\nhello",
+                        fs::read_to_string(role_state::role_prompt_path(&project_root, role_name))
+                            .expect("role prompt should be readable")
+                    ),
+                    "--output-format".to_string(),
+                    "json".to_string(),
+                ]
+            );
+        }
+
+        #[test]
+        fn cli_exec_json_outputs_normalized_envelope() {
+            let temp = TestDir::new("integration-exec-json-envelope");
+            let project_root = create_project_root(&temp);
+            let role_name = "director-of-engineering";
+
+            let init = run_cli(&project_root, &["init", "--role", role_name], None);
+            assert_eq!(init.exit_code, 0);
+
+            let mock_codex = MockCodex::new(temp.path(), 0);
+            let output = run_cli(
+                &project_root,
+                &["exec", "--json", "--role", role_name, "codex", "hello"],
+                Some(&mock_codex),
+            );
+
+            assert_eq!(output.exit_code, 0);
+            let payload: Value =
+                serde_json::from_str(output.stdout.trim()).expect("stdout should be valid JSON");
+            assert_eq!(payload["text"], "codex mock response");
+            assert_eq!(payload["resume_id"], "codex-thread-id");
+            assert_eq!(payload["engine"], "codex");
+            assert_eq!(output.stderr, "");
         }
     }
 }

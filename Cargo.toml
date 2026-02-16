@@ -9,3 +9,4 @@ path = "juliet.rs"
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
+serde_json = "1.0.140"
