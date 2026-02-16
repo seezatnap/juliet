@@ -64,28 +64,23 @@ brew install juliet
 The CLI is minimalistic and supports interactive and non-interactive modes (so you can use it directly in chat, or programatically via a heartbeat)
 
 ```
-Usage: juliet <command> [options]
+CLI API for project-scoped Juliet workflows
+
+Usage: juliet [OPTIONS] [ENGINE] [OPERATOR_INPUT]... [COMMAND]
 
 Commands:
-  Initialize a new role:
-    juliet init --project <name>
+  init           Initialize a new role scaffold
+  reset-prompt   Reset a role prompt to the default template
+  clear-history  Clear role state/history while preserving prompt customization
+  exec           Execute a single non-interactive turn
+  help           Print this message or the help of the given subcommand(s)
 
-  Launch a specific role:
-    juliet --project <name> <claude|codex>
+Arguments:
+  [ENGINE]             Engine to launch in interactive mode [possible values: claude, codex]
+  [OPERATOR_INPUT]...  Optional operator input appended to the launch prompt
 
-  Launch (auto-selects role when only one exists):
-    juliet <claude|codex>
-
-  Reset a role's prompt to default:
-    juliet reset-prompt --project <name>
-
-  Clear a role's history:
-    juliet clear-history --project <name>
-
-  Execute a single non-interactive turn:
-    juliet exec --project <name> <claude|codex> <message...>
-    juliet exec <claude|codex> <message...>
-
-Option alias:
-  --role <name>  Alias for --project <name> (backward compatibility)
+Options:
+      --project <ROLE_NAME>  Role name to launch. If omitted, Juliet auto-selects when exactly one role exists [aliases: --role]
+  -h, --help                 Print help
+  -V, --version              Print version
 ```

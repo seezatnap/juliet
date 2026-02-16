@@ -6,3 +6,6 @@ edition = "2021"
 [[bin]]
 name = "juliet"
 path = "juliet.rs"
+
+[dependencies]
+clap = { version = "4.5.32", features = ["derive"] }

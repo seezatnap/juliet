@@ -7,7 +7,7 @@ Manual end-to-end checklist for the multi-role CLI workflow.
 - [ ] `swarm` in `PATH`.
 - [ ] Optional: `claude` in `PATH` (if testing Claude launch path).
 - [ ] Repo root as current directory.
-- [ ] `juliet` binary available (for example: `rustc juliet.rs -o juliet`).
+- [ ] `juliet` binary available (for example: `cargo build --bin juliet`).
 
 **Setup**
 - [ ] Reset state: `rm -rf .juliet`.
@@ -20,16 +20,15 @@ ROLE=director-of-engineering
 **Step 1: Base Usage Errors**
 - [ ] Run `./juliet`.
 - [ ] Verify stderr includes:
-  - `Usage: juliet <command> [options]`
-  - `juliet init --project <name>`
-  - `juliet --project <name> <claude|codex>`
-  - `juliet <claude|codex>`
-- [ ] Verify exit code is non-zero.
+  - `error:`
+  - `required arguments were not provided`
+  - `Usage: juliet`
+- [ ] Verify exit code is `2`.
 
 **Step 2: Init Usage Error**
 - [ ] Run `./juliet init`.
-- [ ] Verify stderr is exactly `Usage: juliet init --project <name> (alias: --role <name>)`.
-- [ ] Verify exit code is non-zero.
+- [ ] Verify stderr includes `error:` and `Usage: juliet init --project <ROLE_NAME>`.
+- [ ] Verify exit code is `2`.
 
 **Step 3: Role Initialization**
 - [ ] Run `./juliet init --project "$ROLE"`.

@@ -1,3 +1,4 @@
+use clap::{error::ErrorKind, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use std::env;
 use std::fs;
 use std::io;
@@ -7,34 +8,16 @@ use std::process::Command;
 mod role_name;
 mod role_state;
 
-const GENERAL_USAGE: &str = "Usage: juliet <command> [options]\n\nCommands:\n  Initialize a new role:\n    juliet init --project <name>\n\n  Launch a specific role:\n    juliet --project <name> <claude|codex>\n\n  Launch (auto-selects role when only one exists):\n    juliet <claude|codex>\n\n  Reset a role's prompt to default:\n    juliet reset-prompt --project <name>\n\n  Clear a role's history:\n    juliet clear-history --project <name>\n\n  Execute a single non-interactive turn:\n    juliet exec --project <name> <claude|codex> <message...>\n    juliet exec <claude|codex> <message...>\n\nOption alias:\n  --role <name>  Alias for --project <name> (backward compatibility)";
-const INIT_USAGE: &str = "Usage: juliet init --project <name> (alias: --role <name>)";
-const RESET_PROMPT_USAGE: &str =
-    "Usage: juliet reset-prompt --project <name> (alias: --role <name>)";
-const CLEAR_HISTORY_USAGE: &str =
-    "Usage: juliet clear-history --project <name> (alias: --role <name>)";
-const EXEC_USAGE: &str =
-    "Usage: juliet exec [--project <name>] <claude|codex> <message...> (alias: --role <name>)";
 const DEFAULT_PROMPT_SEED: &str = include_str!("prompts/juliet.md");
 const NO_ROLES_CONFIGURED_ERROR: &str = "No roles configured. Run: juliet init --project <name>";
 const MULTIPLE_ROLES_FOUND_ERROR: &str = "Multiple roles found. Specify one with --project <name>:";
 const OPERATOR_PLACEHOLDER: &str =
     "<!-- TODO: Replace with role-specific instructions and expected operator input. -->";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum Engine {
     Claude,
     Codex,
-}
-
-impl Engine {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "claude" => Some(Self::Claude),
-            "codex" => Some(Self::Codex),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -60,165 +43,140 @@ enum CliCommand {
     },
 }
 
-#[derive(Debug, Eq, PartialEq)]
-enum CliError {
-    Usage,
-    InitUsage,
-    ResetPromptUsage,
-    ClearHistoryUsage,
-    ExecUsage,
-}
-
-impl CliError {
-    fn message(&self) -> &'static str {
-        match self {
-            Self::Usage => GENERAL_USAGE,
-            Self::InitUsage => INIT_USAGE,
-            Self::ResetPromptUsage => RESET_PROMPT_USAGE,
-            Self::ClearHistoryUsage => CLEAR_HISTORY_USAGE,
-            Self::ExecUsage => EXEC_USAGE,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum InitOutcome {
     Initialized,
     AlreadyExists,
 }
 
-fn parse_cli_command(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.is_empty() {
-        return Err(CliError::Usage);
-    }
-
-    match args[0].as_str() {
-        "init" => parse_init_command(args),
-        "reset-prompt" => parse_reset_prompt_command(args),
-        "clear-history" => parse_clear_history_command(args),
-        "exec" => parse_exec_command(args),
-        option if is_project_option(option) => parse_explicit_role_launch(args),
-        _ => parse_implicit_role_launch(args),
-    }
+#[derive(Debug, Args)]
+struct ProjectArgs {
+    /// Role name to target.
+    #[arg(
+        long = "project",
+        visible_alias = "role",
+        value_name = "ROLE_NAME",
+        allow_hyphen_values = true
+    )]
+    role_name: String,
 }
 
-fn is_project_option(option: &str) -> bool {
-    option == "--project" || option == "--role"
+#[derive(Debug, Args)]
+struct ExecArgs {
+    /// Role name to target. If omitted, Juliet auto-selects when exactly one role exists.
+    #[arg(
+        long = "project",
+        visible_alias = "role",
+        value_name = "ROLE_NAME",
+        allow_hyphen_values = true
+    )]
+    role_name: Option<String>,
+    /// Engine to execute.
+    engine: Engine,
+    /// Message text appended to the prompt as user input.
+    #[arg(
+        required = true,
+        num_args = 1..,
+        trailing_var_arg = true,
+        value_name = "MESSAGE",
+        allow_hyphen_values = true
+    )]
+    message: Vec<String>,
 }
 
-fn parse_init_command(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 3 || !is_project_option(&args[1]) {
-        return Err(CliError::InitUsage);
-    }
+#[derive(Debug, Parser)]
+#[command(
+    name = "juliet",
+    about = "CLI API for project-scoped Juliet workflows",
+    long_about = None,
+    version
+)]
+struct JulietCli {
+    #[command(subcommand)]
+    command: Option<JulietSubcommand>,
 
-    Ok(CliCommand::Init {
-        role_name: args[2].clone(),
-    })
+    /// Role name to launch. If omitted, Juliet auto-selects when exactly one role exists.
+    #[arg(
+        long = "project",
+        visible_alias = "role",
+        value_name = "ROLE_NAME",
+        allow_hyphen_values = true
+    )]
+    role_name: Option<String>,
+    /// Engine to launch in interactive mode.
+    engine: Option<Engine>,
+    /// Optional operator input appended to the launch prompt.
+    #[arg(
+        num_args = 0..,
+        trailing_var_arg = true,
+        value_name = "OPERATOR_INPUT",
+        allow_hyphen_values = true
+    )]
+    operator_input: Vec<String>,
 }
 
-fn parse_reset_prompt_command(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 3 || !is_project_option(&args[1]) {
-        return Err(CliError::ResetPromptUsage);
-    }
-
-    Ok(CliCommand::ResetPrompt {
-        role_name: args[2].clone(),
-    })
+#[derive(Debug, Subcommand)]
+enum JulietSubcommand {
+    /// Initialize a new role scaffold.
+    #[command(about = "Initialize a new role scaffold", long_about = None)]
+    Init(ProjectArgs),
+    /// Reset a role prompt to the default template.
+    #[command(name = "reset-prompt")]
+    #[command(about = "Reset a role prompt to the default template", long_about = None)]
+    ResetPrompt(ProjectArgs),
+    /// Clear role state/history while preserving prompt customization.
+    #[command(name = "clear-history")]
+    #[command(
+        about = "Clear role state/history while preserving prompt customization",
+        long_about = None
+    )]
+    ClearHistory(ProjectArgs),
+    /// Execute a single non-interactive turn.
+    #[command(about = "Execute a single non-interactive turn", long_about = None)]
+    Exec(ExecArgs),
 }
 
-fn parse_clear_history_command(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() != 3 || !is_project_option(&args[1]) {
-        return Err(CliError::ClearHistoryUsage);
-    }
-
-    Ok(CliCommand::ClearHistory {
-        role_name: args[2].clone(),
-    })
+fn parse_with_clap<P>(args: &[String]) -> Result<P, clap::Error>
+where
+    P: Parser,
+{
+    let mut argv = Vec::with_capacity(args.len() + 1);
+    argv.push("juliet".to_string());
+    argv.extend(args.iter().cloned());
+    P::try_parse_from(argv)
 }
 
-fn parse_exec_command(args: &[String]) -> Result<CliCommand, CliError> {
-    // args[0] == "exec"
-    if args.len() < 2 {
-        return Err(CliError::ExecUsage);
-    }
-
-    if is_project_option(&args[1]) {
-        // exec --project <name> <engine> <message...>
-        if args.len() < 5 {
-            return Err(CliError::ExecUsage);
+fn parse_cli_command(args: &[String]) -> Result<CliCommand, clap::Error> {
+    let parsed = parse_with_clap::<JulietCli>(args)?;
+    match parsed.command {
+        Some(JulietSubcommand::Init(project)) => Ok(CliCommand::Init {
+            role_name: project.role_name,
+        }),
+        Some(JulietSubcommand::ResetPrompt(project)) => Ok(CliCommand::ResetPrompt {
+            role_name: project.role_name,
+        }),
+        Some(JulietSubcommand::ClearHistory(project)) => Ok(CliCommand::ClearHistory {
+            role_name: project.role_name,
+        }),
+        Some(JulietSubcommand::Exec(exec)) => Ok(CliCommand::Exec {
+            role_name: exec.role_name,
+            engine: exec.engine,
+            message: exec.message.join(" "),
+        }),
+        None => {
+            let Some(engine) = parsed.engine else {
+                return Err(JulietCli::command().error(
+                    ErrorKind::MissingRequiredArgument,
+                    "the following required arguments were not provided:\n  <ENGINE>",
+                ));
+            };
+            Ok(CliCommand::Launch {
+                role_name: parsed.role_name,
+                engine,
+                operator_input: parse_operator_input(&parsed.operator_input),
+            })
         }
-
-        let engine = match Engine::parse(&args[3]) {
-            Some(parsed) => parsed,
-            None => return Err(CliError::ExecUsage),
-        };
-
-        let message = args[4..].join(" ");
-        if message.is_empty() {
-            return Err(CliError::ExecUsage);
-        }
-
-        Ok(CliCommand::Exec {
-            role_name: Some(args[2].clone()),
-            engine,
-            message,
-        })
-    } else {
-        // exec <engine> <message...>
-        if args.len() < 3 {
-            return Err(CliError::ExecUsage);
-        }
-
-        let engine = match Engine::parse(&args[1]) {
-            Some(parsed) => parsed,
-            None => return Err(CliError::ExecUsage),
-        };
-
-        let message = args[2..].join(" ");
-        if message.is_empty() {
-            return Err(CliError::ExecUsage);
-        }
-
-        Ok(CliCommand::Exec {
-            role_name: None,
-            engine,
-            message,
-        })
     }
-}
-
-fn parse_explicit_role_launch(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.len() < 3 {
-        return Err(CliError::Usage);
-    }
-
-    let engine = match Engine::parse(&args[2]) {
-        Some(parsed) => parsed,
-        None => return Err(CliError::Usage),
-    };
-
-    Ok(CliCommand::Launch {
-        role_name: Some(args[1].clone()),
-        engine,
-        operator_input: parse_operator_input(&args[3..]),
-    })
-}
-
-fn parse_implicit_role_launch(args: &[String]) -> Result<CliCommand, CliError> {
-    if args.is_empty() {
-        return Err(CliError::Usage);
-    }
-
-    let engine = match Engine::parse(&args[0]) {
-        Some(parsed) => parsed,
-        None => return Err(CliError::Usage),
-    };
-
-    Ok(CliCommand::Launch {
-        role_name: None,
-        engine,
-        operator_input: parse_operator_input(&args[1..]),
-    })
 }
 
 fn parse_operator_input(args: &[String]) -> Option<String> {
@@ -615,8 +573,9 @@ fn main() {
     let command = match parse_cli_command(&args) {
         Ok(parsed) => parsed,
         Err(err) => {
-            println!("{}", err.message());
-            std::process::exit(1);
+            let exit_code = err.exit_code();
+            let _ = err.print();
+            std::process::exit(exit_code);
         }
     };
 
@@ -682,181 +641,173 @@ mod tests {
 
     #[test]
     fn parses_init_with_project() {
+        let parsed = parse_cli_command(&to_args(&["init", "--project", "director-of-engineering"]))
+            .expect("init parse should succeed");
         assert_eq!(
-            parse_cli_command(&to_args(&["init", "--project", "director-of-engineering"])),
-            Ok(CliCommand::Init {
+            parsed,
+            CliCommand::Init {
                 role_name: "director-of-engineering".to_string()
-            })
+            }
         );
     }
 
     #[test]
     fn parses_init_with_role_alias() {
+        let parsed = parse_cli_command(&to_args(&["init", "--role", "director-of-engineering"]))
+            .expect("init alias parse should succeed");
         assert_eq!(
-            parse_cli_command(&to_args(&["init", "--role", "director-of-engineering"])),
-            Ok(CliCommand::Init {
+            parsed,
+            CliCommand::Init {
                 role_name: "director-of-engineering".to_string()
-            })
+            }
         );
     }
 
     #[test]
-    fn parses_explicit_role_launch_with_project_option() {
+    fn parses_explicit_role_launch_with_alias_and_operator_input() {
+        let parsed = parse_cli_command(&to_args(&[
+            "--role",
+            "director-of-engineering",
+            "codex",
+            "continue",
+            "project",
+            "alpha",
+        ]))
+        .expect("explicit launch parse should succeed");
         assert_eq!(
-            parse_cli_command(&to_args(&["--project", "director-of-engineering", "codex"])),
-            Ok(CliCommand::Launch {
+            parsed,
+            CliCommand::Launch {
                 role_name: Some("director-of-engineering".to_string()),
                 engine: Engine::Codex,
-                operator_input: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_explicit_role_launch_with_role_alias() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["--role", "director-of-engineering", "codex"])),
-            Ok(CliCommand::Launch {
-                role_name: Some("director-of-engineering".to_string()),
-                engine: Engine::Codex,
-                operator_input: None,
-            })
+                operator_input: Some("continue project alpha".to_string()),
+            }
         );
     }
 
     #[test]
     fn parses_implicit_role_launch() {
+        let parsed =
+            parse_cli_command(&to_args(&["claude"])).expect("implicit launch parse should succeed");
         assert_eq!(
-            parse_cli_command(&to_args(&["claude"])),
-            Ok(CliCommand::Launch {
+            parsed,
+            CliCommand::Launch {
                 role_name: None,
                 engine: Engine::Claude,
                 operator_input: None,
-            })
+            }
         );
     }
 
     #[test]
-    fn parses_explicit_role_launch_with_operator_input() {
+    fn parses_reset_prompt_with_alias() {
+        let parsed = parse_cli_command(&to_args(&["reset-prompt", "--role", "ops"]))
+            .expect("reset-prompt parse should succeed");
         assert_eq!(
-            parse_cli_command(&to_args(&[
-                "--project",
-                "director-of-engineering",
-                "codex",
-                "start",
-                "from",
-                "~/prds/foo.md",
-            ])),
-            Ok(CliCommand::Launch {
-                role_name: Some("director-of-engineering".to_string()),
-                engine: Engine::Codex,
-                operator_input: Some("start from ~/prds/foo.md".to_string()),
-            })
+            parsed,
+            CliCommand::ResetPrompt {
+                role_name: "ops".to_string()
+            }
         );
     }
 
     #[test]
-    fn parses_implicit_role_launch_with_operator_input() {
+    fn parses_clear_history_with_project() {
+        let parsed = parse_cli_command(&to_args(&["clear-history", "--project", "qa-team"]))
+            .expect("clear-history parse should succeed");
         assert_eq!(
-            parse_cli_command(&to_args(&["claude", "continue", "project", "alpha"])),
-            Ok(CliCommand::Launch {
+            parsed,
+            CliCommand::ClearHistory {
+                role_name: "qa-team".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parses_exec_implicit_and_explicit() {
+        let implicit = parse_cli_command(&to_args(&["exec", "claude", "do", "the", "thing"]))
+            .expect("implicit exec parse should succeed");
+        assert_eq!(
+            implicit,
+            CliCommand::Exec {
                 role_name: None,
                 engine: Engine::Claude,
-                operator_input: Some("continue project alpha".to_string()),
-            })
+                message: "do the thing".to_string(),
+            }
         );
-    }
 
-    // reset-prompt parsing tests
-
-    #[test]
-    fn parses_reset_prompt_with_project() {
+        let explicit = parse_cli_command(&to_args(&[
+            "exec", "--role", "my-role", "codex", "fix", "the", "bug",
+        ]))
+        .expect("explicit exec parse should succeed");
         assert_eq!(
-            parse_cli_command(&to_args(&[
-                "reset-prompt",
-                "--project",
-                "director-of-engineering",
-            ])),
-            Ok(CliCommand::ResetPrompt {
-                role_name: "director-of-engineering".to_string()
-            })
+            explicit,
+            CliCommand::Exec {
+                role_name: Some("my-role".to_string()),
+                engine: Engine::Codex,
+                message: "fix the bug".to_string(),
+            }
         );
     }
 
     #[test]
-    fn parses_reset_prompt_with_role_alias() {
+    fn parses_exec_with_hyphen_prefixed_role_value() {
+        let parsed = parse_cli_command(&to_args(&[
+            "exec",
+            "--project",
+            "-leading",
+            "claude",
+            "hello",
+        ]))
+        .expect("exec parse should allow hyphen-prefixed role values");
         assert_eq!(
-            parse_cli_command(&to_args(&[
-                "reset-prompt",
-                "--role",
-                "director-of-engineering"
-            ])),
-            Ok(CliCommand::ResetPrompt {
-                role_name: "director-of-engineering".to_string()
-            })
+            parsed,
+            CliCommand::Exec {
+                role_name: Some("-leading".to_string()),
+                engine: Engine::Claude,
+                message: "hello".to_string(),
+            }
         );
     }
 
     #[test]
-    fn reset_prompt_usage_error_when_missing_role_option() {
-        let error = parse_cli_command(&to_args(&["reset-prompt"])).unwrap_err();
-        assert_eq!(error, CliError::ResetPromptUsage);
-        assert_eq!(error.message(), RESET_PROMPT_USAGE);
-    }
-
-    #[test]
-    fn reset_prompt_usage_error_when_missing_role_name() {
-        let error = parse_cli_command(&to_args(&["reset-prompt", "--role"])).unwrap_err();
-        assert_eq!(error, CliError::ResetPromptUsage);
-        assert_eq!(error.message(), RESET_PROMPT_USAGE);
-    }
-
-    #[test]
-    fn reset_prompt_usage_error_when_extra_args() {
-        let error = parse_cli_command(&to_args(&["reset-prompt", "--role", "my-role", "extra"]))
-            .unwrap_err();
-        assert_eq!(error, CliError::ResetPromptUsage);
-    }
-
-    #[test]
-    fn reset_prompt_usage_error_when_wrong_flag() {
-        let error =
-            parse_cli_command(&to_args(&["reset-prompt", "--name", "my-role"])).unwrap_err();
-        assert_eq!(error, CliError::ResetPromptUsage);
-    }
-
-    #[test]
-    fn parses_reset_prompt_with_simple_role_name() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["reset-prompt", "--role", "ops"])),
-            Ok(CliCommand::ResetPrompt {
-                role_name: "ops".to_string()
-            })
-        );
-    }
-
-    #[test]
-    fn parses_reset_prompt_with_numeric_role_name() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["reset-prompt", "--role", "agent-007"])),
-            Ok(CliCommand::ResetPrompt {
-                role_name: "agent-007".to_string()
-            })
-        );
-    }
-
-    #[test]
-    fn reset_prompt_parser_passes_through_invalid_role_names() {
-        // The parser does not validate role names; validation is deferred to execution.
-        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
-            let result = parse_cli_command(&to_args(&["reset-prompt", "--role", bad_name]));
-            assert_eq!(
-                result,
-                Ok(CliCommand::ResetPrompt {
-                    role_name: bad_name.to_string()
-                }),
-                "parser should accept any string as role_name without validation: {bad_name}"
+    fn parser_errors_are_clap_native_for_invalid_shapes() {
+        for args in [
+            vec!["reset-prompt"],
+            vec!["clear-history", "--role"],
+            vec!["exec", "claude"],
+            vec!["exec", "--role", "my-role", "claude"],
+            vec!["exec", "--role"],
+        ] {
+            assert!(
+                parse_cli_command(&to_args(&args)).is_err(),
+                "expected parse error for args: {:?}",
+                args
             );
+        }
+    }
+
+    #[test]
+    fn parser_requires_engine_for_launch_mode() {
+        let error = parse_cli_command(&to_args(&[])).expect_err("no args should fail");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+
+        let explicit_missing_engine = parse_cli_command(&to_args(&["--role", "director"]))
+            .expect_err("explicit launch without engine should fail");
+        assert_eq!(
+            explicit_missing_engine.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn parser_rejects_invalid_exec_engine_values() {
+        for invalid_engine in ["Claude", "CLAUDE", "Codex", "CODEX", "Claude3", "gpt4"] {
+            let error = parse_cli_command(&to_args(&["exec", invalid_engine, "hello"]))
+                .expect_err("invalid engine should fail");
+            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
         }
     }
 
@@ -869,106 +820,6 @@ mod tests {
             assert!(
                 err.contains("Invalid role name"),
                 "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
-            );
-        }
-    }
-
-    #[test]
-    fn reset_prompt_usage_error_when_role_flag_not_second_arg() {
-        let error =
-            parse_cli_command(&to_args(&["reset-prompt", "my-role", "--role"])).unwrap_err();
-        assert_eq!(error, CliError::ResetPromptUsage);
-    }
-
-    // clear-history parsing tests
-
-    #[test]
-    fn parses_clear_history_with_project() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "clear-history",
-                "--project",
-                "director-of-engineering",
-            ])),
-            Ok(CliCommand::ClearHistory {
-                role_name: "director-of-engineering".to_string()
-            })
-        );
-    }
-
-    #[test]
-    fn parses_clear_history_with_role_alias() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "clear-history",
-                "--role",
-                "director-of-engineering"
-            ])),
-            Ok(CliCommand::ClearHistory {
-                role_name: "director-of-engineering".to_string()
-            })
-        );
-    }
-
-    #[test]
-    fn clear_history_usage_error_when_missing_role_option() {
-        let error = parse_cli_command(&to_args(&["clear-history"])).unwrap_err();
-        assert_eq!(error, CliError::ClearHistoryUsage);
-        assert_eq!(error.message(), CLEAR_HISTORY_USAGE);
-    }
-
-    #[test]
-    fn clear_history_usage_error_when_missing_role_name() {
-        let error = parse_cli_command(&to_args(&["clear-history", "--role"])).unwrap_err();
-        assert_eq!(error, CliError::ClearHistoryUsage);
-        assert_eq!(error.message(), CLEAR_HISTORY_USAGE);
-    }
-
-    #[test]
-    fn clear_history_usage_error_when_extra_args() {
-        let error = parse_cli_command(&to_args(&["clear-history", "--role", "my-role", "extra"]))
-            .unwrap_err();
-        assert_eq!(error, CliError::ClearHistoryUsage);
-    }
-
-    #[test]
-    fn clear_history_usage_error_when_wrong_flag() {
-        let error =
-            parse_cli_command(&to_args(&["clear-history", "--name", "my-role"])).unwrap_err();
-        assert_eq!(error, CliError::ClearHistoryUsage);
-    }
-
-    #[test]
-    fn parses_clear_history_with_simple_role_name() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["clear-history", "--role", "qa"])),
-            Ok(CliCommand::ClearHistory {
-                role_name: "qa".to_string()
-            })
-        );
-    }
-
-    #[test]
-    fn parses_clear_history_with_numeric_role_name() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["clear-history", "--role", "team-42"])),
-            Ok(CliCommand::ClearHistory {
-                role_name: "team-42".to_string()
-            })
-        );
-    }
-
-    #[test]
-    fn clear_history_parser_passes_through_invalid_role_names() {
-        // The parser does not validate role names; validation is deferred to execution.
-        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
-            let result = parse_cli_command(&to_args(&["clear-history", "--role", bad_name]));
-            assert_eq!(
-                result,
-                Ok(CliCommand::ClearHistory {
-                    role_name: bad_name.to_string()
-                }),
-                "parser should accept any string as role_name without validation: {bad_name}"
             );
         }
     }
@@ -987,208 +838,6 @@ mod tests {
     }
 
     #[test]
-    fn clear_history_usage_error_when_role_flag_not_second_arg() {
-        let error =
-            parse_cli_command(&to_args(&["clear-history", "my-role", "--role"])).unwrap_err();
-        assert_eq!(error, CliError::ClearHistoryUsage);
-    }
-
-    // exec parsing tests
-
-    #[test]
-    fn parses_exec_with_explicit_project_and_claude() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "exec",
-                "--project",
-                "my-role",
-                "claude",
-                "do",
-                "the",
-                "thing"
-            ])),
-            Ok(CliCommand::Exec {
-                role_name: Some("my-role".to_string()),
-                engine: Engine::Claude,
-                message: "do the thing".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn parses_exec_with_explicit_project_and_codex() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "exec",
-                "--project",
-                "my-role",
-                "codex",
-                "fix",
-                "the",
-                "bug"
-            ])),
-            Ok(CliCommand::Exec {
-                role_name: Some("my-role".to_string()),
-                engine: Engine::Codex,
-                message: "fix the bug".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn parses_exec_with_explicit_role_alias_and_codex() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "exec", "--role", "my-role", "codex", "fix", "the", "bug"
-            ])),
-            Ok(CliCommand::Exec {
-                role_name: Some("my-role".to_string()),
-                engine: Engine::Codex,
-                message: "fix the bug".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn parses_exec_with_implicit_role_and_claude() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["exec", "claude", "do", "the", "thing"])),
-            Ok(CliCommand::Exec {
-                role_name: None,
-                engine: Engine::Claude,
-                message: "do the thing".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn parses_exec_with_implicit_role_and_codex() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["exec", "codex", "fix", "the", "bug"])),
-            Ok(CliCommand::Exec {
-                role_name: None,
-                engine: Engine::Codex,
-                message: "fix the bug".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn parses_exec_with_single_word_message() {
-        assert_eq!(
-            parse_cli_command(&to_args(&["exec", "claude", "hello"])),
-            Ok(CliCommand::Exec {
-                role_name: None,
-                engine: Engine::Claude,
-                message: "hello".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn parses_exec_explicit_role_with_single_word_message() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "exec",
-                "--project",
-                "my-role",
-                "codex",
-                "hello"
-            ])),
-            Ok(CliCommand::Exec {
-                role_name: Some("my-role".to_string()),
-                engine: Engine::Codex,
-                message: "hello".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn exec_joins_remaining_args_into_message() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "exec", "claude", "please", "fix", "all", "the", "bugs"
-            ])),
-            Ok(CliCommand::Exec {
-                role_name: None,
-                engine: Engine::Claude,
-                message: "please fix all the bugs".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn exec_usage_error_when_no_args_after_exec() {
-        let error = parse_cli_command(&to_args(&["exec"])).unwrap_err();
-        assert_eq!(error, CliError::ExecUsage);
-        assert_eq!(error.message(), EXEC_USAGE);
-    }
-
-    #[test]
-    fn exec_usage_error_when_missing_message_implicit() {
-        let error = parse_cli_command(&to_args(&["exec", "claude"])).unwrap_err();
-        assert_eq!(error, CliError::ExecUsage);
-    }
-
-    #[test]
-    fn exec_usage_error_when_invalid_engine_implicit() {
-        let error = parse_cli_command(&to_args(&["exec", "invalid", "hello"])).unwrap_err();
-        assert_eq!(error, CliError::ExecUsage);
-    }
-
-    #[test]
-    fn exec_usage_error_when_missing_engine_and_message_explicit() {
-        let error = parse_cli_command(&to_args(&["exec", "--role", "my-role"])).unwrap_err();
-        assert_eq!(error, CliError::ExecUsage);
-    }
-
-    #[test]
-    fn exec_usage_error_when_missing_message_explicit() {
-        let error =
-            parse_cli_command(&to_args(&["exec", "--role", "my-role", "claude"])).unwrap_err();
-        assert_eq!(error, CliError::ExecUsage);
-    }
-
-    #[test]
-    fn exec_usage_error_when_invalid_engine_explicit() {
-        let error = parse_cli_command(&to_args(&["exec", "--role", "my-role", "invalid", "hello"]))
-            .unwrap_err();
-        assert_eq!(error, CliError::ExecUsage);
-    }
-
-    #[test]
-    fn exec_explicit_role_joins_remaining_args_into_message() {
-        assert_eq!(
-            parse_cli_command(&to_args(&[
-                "exec", "--role", "my-role", "claude", "please", "fix", "all", "the", "bugs"
-            ])),
-            Ok(CliCommand::Exec {
-                role_name: Some("my-role".to_string()),
-                engine: Engine::Claude,
-                message: "please fix all the bugs".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn exec_parser_passes_through_invalid_role_names() {
-        // The parser does not validate role names; validation is deferred to execution.
-        for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
-            let result =
-                parse_cli_command(&to_args(&["exec", "--role", bad_name, "claude", "hello"]));
-            assert_eq!(
-                result,
-                Ok(CliCommand::Exec {
-                    role_name: Some(bad_name.to_string()),
-                    engine: Engine::Claude,
-                    message: "hello".to_string(),
-                }),
-                "parser should accept any string as role_name without validation: {bad_name}"
-            );
-        }
-    }
-
-    #[test]
     fn exec_bad_role_name_rejected_by_validation() {
         // Role name validation rejects names that the parser passes through.
         for bad_name in ["Invalid_Name", "../traversal", "", "-leading", "UPPER"] {
@@ -1199,87 +848,6 @@ mod tests {
                 "validation error for '{bad_name}' should contain 'Invalid role name': {err}"
             );
         }
-    }
-
-    #[test]
-    fn exec_engine_parsing_is_case_sensitive() {
-        // Only lowercase "claude" and "codex" are valid engines.
-        for invalid_engine in ["Claude", "CLAUDE", "Codex", "CODEX", "Claude3", "gpt4"] {
-            let error_implicit =
-                parse_cli_command(&to_args(&["exec", invalid_engine, "hello"])).unwrap_err();
-            assert_eq!(
-                error_implicit,
-                CliError::ExecUsage,
-                "implicit form should reject engine '{invalid_engine}'"
-            );
-
-            let error_explicit = parse_cli_command(&to_args(&[
-                "exec",
-                "--role",
-                "my-role",
-                invalid_engine,
-                "hello",
-            ]))
-            .unwrap_err();
-            assert_eq!(
-                error_explicit,
-                CliError::ExecUsage,
-                "explicit form should reject engine '{invalid_engine}'"
-            );
-        }
-    }
-
-    #[test]
-    fn exec_usage_error_message_matches_exec_usage_constant() {
-        let error = parse_cli_command(&to_args(&["exec"])).unwrap_err();
-        assert_eq!(error.message(), EXEC_USAGE);
-
-        let error = parse_cli_command(&to_args(&["exec", "claude"])).unwrap_err();
-        assert_eq!(error.message(), EXEC_USAGE);
-
-        let error = parse_cli_command(&to_args(&["exec", "--role", "my-role"])).unwrap_err();
-        assert_eq!(error.message(), EXEC_USAGE);
-    }
-
-    #[test]
-    fn exec_message_preserves_whitespace_between_args() {
-        // Each arg is joined by a single space; internal whitespace within args is preserved.
-        assert_eq!(
-            parse_cli_command(&to_args(&["exec", "codex", "word1", "word2", "word3"])),
-            Ok(CliCommand::Exec {
-                role_name: None,
-                engine: Engine::Codex,
-                message: "word1 word2 word3".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn exec_usage_error_when_role_flag_present_but_missing_role_name_and_engine() {
-        let error = parse_cli_command(&to_args(&["exec", "--role"])).unwrap_err();
-        assert_eq!(error, CliError::ExecUsage);
-    }
-
-    #[test]
-    fn usage_error_when_no_arguments_are_provided() {
-        let error = parse_cli_command(&to_args(&[])).unwrap_err();
-        assert_eq!(error, CliError::Usage);
-        assert_eq!(error.message(), GENERAL_USAGE);
-    }
-
-    #[test]
-    fn usage_error_when_init_missing_role_option() {
-        let error = parse_cli_command(&to_args(&["init"])).unwrap_err();
-        assert_eq!(error, CliError::InitUsage);
-        assert_eq!(error.message(), INIT_USAGE);
-    }
-
-    #[test]
-    fn usage_error_when_explicit_role_launch_is_missing_engine() {
-        let error =
-            parse_cli_command(&to_args(&["--role", "director-of-engineering"])).unwrap_err();
-        assert_eq!(error, CliError::Usage);
-        assert_eq!(error.message(), GENERAL_USAGE);
     }
 
     #[test]
@@ -2109,7 +1677,6 @@ mod tests {
         use std::path::{Path, PathBuf};
         use std::process::Command;
         use std::sync::OnceLock;
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         struct CliOutput {
             exit_code: i32,
@@ -2232,43 +1799,35 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
         fn cli_binary_path() -> &'static PathBuf {
             static CLI_BINARY: OnceLock<PathBuf> = OnceLock::new();
             CLI_BINARY.get_or_init(|| {
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("time drift should not occur in tests")
-                    .as_nanos();
-                let build_root = env::temp_dir().join(format!(
-                    "juliet-cli-integration-bin-{}-{timestamp}",
-                    std::process::id()
-                ));
-                fs::create_dir_all(&build_root)
-                    .expect("cli integration build directory should be created");
-
-                let source_path = env::current_dir()
-                    .expect("test process should have a current directory")
-                    .join("juliet.rs");
-                assert!(
-                    source_path.is_file(),
-                    "expected juliet.rs at {}",
-                    source_path.display()
-                );
-
-                let binary_path = build_root.join("juliet-cli");
-                let output = Command::new("rustc")
-                    .arg(&source_path)
-                    .arg("-o")
-                    .arg(&binary_path)
+                let manifest_dir =
+                    env::current_dir().expect("test process should have a current directory");
+                let output = Command::new("cargo")
+                    .arg("build")
+                    .arg("--bin")
+                    .arg("juliet")
+                    .arg("--quiet")
+                    .current_dir(&manifest_dir)
                     .output()
-                    .expect("rustc should be invokable for cli integration tests");
+                    .expect("cargo should be invokable for cli integration tests");
 
                 if !output.status.success() {
                     panic!(
-                        "failed to compile CLI binary\nstatus: {:?}\nstdout:\n{}\nstderr:\n{}",
+                        "failed to build CLI binary\nstatus: {:?}\nstdout:\n{}\nstderr:\n{}",
                         output.status.code(),
                         String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     );
                 }
 
+                let target_dir = env::var_os("CARGO_TARGET_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| manifest_dir.join("target"));
+                let binary_path = target_dir.join("debug").join("juliet");
+                assert!(
+                    binary_path.is_file(),
+                    "expected juliet binary at {}",
+                    binary_path.display()
+                );
                 binary_path
             })
         }
@@ -2344,27 +1903,85 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
         }
 
         #[test]
-        fn cli_no_args_prints_general_usage_and_exits_with_code_one() {
+        fn cli_help_uses_standard_clap_format() {
+            let temp = TestDir::new("integration-help");
+            let project_root = create_project_root(&temp);
+
+            let output = run_cli(&project_root, &["--help"], None);
+
+            assert_eq!(output.exit_code, 0);
+            assert!(output.stdout.contains("Usage: juliet"));
+            assert!(output.stdout.contains("Commands:"));
+            assert!(output.stdout.contains("init"));
+            assert!(output.stdout.contains("Initialize a new role scaffold"));
+            assert!(output
+                .stdout
+                .contains("Reset a role prompt to the default template"));
+            assert!(output.stdout.contains("Clear role state/history"));
+            assert!(output.stdout.contains("exec"));
+            assert!(output
+                .stdout
+                .contains("Execute a single non-interactive turn"));
+            assert!(output.stdout.contains("-h, --help"));
+            assert!(output.stdout.contains("-V, --version"));
+            assert!(output.stdout.contains("--project <ROLE_NAME>"));
+            assert_eq!(output.stderr, "");
+        }
+
+        #[test]
+        fn cli_subcommand_help_includes_argument_annotations() {
+            let temp = TestDir::new("integration-subcommand-help");
+            let project_root = create_project_root(&temp);
+
+            let exec_help = run_cli(&project_root, &["exec", "--help"], None);
+            assert_eq!(exec_help.exit_code, 0);
+            assert!(exec_help
+                .stdout
+                .contains("Execute a single non-interactive turn"));
+            assert!(exec_help.stdout.contains("--project <ROLE_NAME>"));
+            assert!(exec_help
+                .stdout
+                .contains("Message text appended to the prompt"));
+
+            let launch_help = run_cli(&project_root, &["--help"], None);
+            assert!(launch_help
+                .stdout
+                .contains("Engine to launch in interactive mode"));
+            assert!(launch_help
+                .stdout
+                .contains("Optional operator input appended to the launch prompt"));
+        }
+
+        #[test]
+        fn cli_no_args_prints_clap_error_and_usage() {
             let temp = TestDir::new("integration-no-args");
             let project_root = create_project_root(&temp);
 
             let output = run_cli(&project_root, &[], None);
 
-            assert_eq!(output.exit_code, 1);
-            assert_eq!(output.stdout, format!("{GENERAL_USAGE}\n"));
-            assert_eq!(output.stderr, "");
+            assert_eq!(output.exit_code, 2);
+            assert_eq!(output.stdout, "");
+            assert!(output.stderr.contains("error:"));
+            assert!(output
+                .stderr
+                .contains("required arguments were not provided"));
+            assert!(output.stderr.contains("<ENGINE>"));
+            assert!(output.stderr.contains("Usage: juliet"));
         }
 
         #[test]
-        fn cli_init_without_role_prints_init_usage_and_exits_with_code_one() {
+        fn cli_init_without_role_prints_clap_usage_and_exits_with_code_two() {
             let temp = TestDir::new("integration-init-usage");
             let project_root = create_project_root(&temp);
 
             let output = run_cli(&project_root, &["init"], None);
 
-            assert_eq!(output.exit_code, 1);
-            assert_eq!(output.stdout, format!("{INIT_USAGE}\n"));
-            assert_eq!(output.stderr, "");
+            assert_eq!(output.exit_code, 2);
+            assert_eq!(output.stdout, "");
+            assert!(output.stderr.contains("error:"));
+            assert!(output
+                .stderr
+                .contains("Usage: juliet init --project <ROLE_NAME>"));
         }
 
         #[test]
@@ -2687,15 +2304,18 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
         }
 
         #[test]
-        fn cli_reset_prompt_without_role_prints_usage_and_exits_with_code_one() {
+        fn cli_reset_prompt_without_role_prints_clap_usage_and_exits_with_code_two() {
             let temp = TestDir::new("integration-reset-prompt-usage");
             let project_root = create_project_root(&temp);
 
             let output = run_cli(&project_root, &["reset-prompt"], None);
 
-            assert_eq!(output.exit_code, 1);
-            assert_eq!(output.stdout, format!("{RESET_PROMPT_USAGE}\n"));
-            assert_eq!(output.stderr, "");
+            assert_eq!(output.exit_code, 2);
+            assert_eq!(output.stdout, "");
+            assert!(output.stderr.contains("error:"));
+            assert!(output
+                .stderr
+                .contains("Usage: juliet reset-prompt --project <ROLE_NAME>"));
         }
 
         #[test]
@@ -2884,15 +2504,18 @@ exit "${JULIET_TEST_CLAUDE_EXIT_CODE:-0}"
         }
 
         #[test]
-        fn cli_clear_history_without_role_prints_usage_and_exits_with_code_one() {
+        fn cli_clear_history_without_role_prints_clap_usage_and_exits_with_code_two() {
             let temp = TestDir::new("integration-clear-history-usage");
             let project_root = create_project_root(&temp);
 
             let output = run_cli(&project_root, &["clear-history"], None);
 
-            assert_eq!(output.exit_code, 1);
-            assert_eq!(output.stdout, format!("{CLEAR_HISTORY_USAGE}\n"));
-            assert_eq!(output.stderr, "");
+            assert_eq!(output.exit_code, 2);
+            assert_eq!(output.stdout, "");
+            assert!(output.stderr.contains("error:"));
+            assert!(output
+                .stderr
+                .contains("Usage: juliet clear-history --project <ROLE_NAME>"));
         }
 
         #[test]
